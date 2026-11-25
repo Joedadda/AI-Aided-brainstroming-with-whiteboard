@@ -48,38 +48,38 @@ export function ReportHeader({
           {title}
         </Title>
       )}
-      <div>
-        <div className="mb-2 flex items-baseline justify-between gap-4">
-          <h3 className="text-[15px] font-semibold text-ink">
-            Notes used <span className="font-normal text-ink-3 tabular-nums">{notes.length}</span>
-          </h3>
+      {notes.length > 0 && (
+        <details>
+          <summary className="cursor-pointer rounded-md text-[13px] font-medium text-ink-2">
+            Selected notes <span className="font-normal text-ink-3 tabular-nums">{notes.length}</span>
+          </summary>
           {onShowNotes && notes.length > 1 && (
-            <button type="button" onClick={() => onShowNotes(notes.map((n) => n.id))} className="text-[13px] font-medium text-accent hover:underline">
+            <button type="button" onClick={() => onShowNotes(notes.map((n) => n.id))} className="mt-2 text-[13px] font-medium text-accent hover:underline">
               Show all on the board
             </button>
           )}
-        </div>
-        <ul className="flex list-disc flex-col gap-1.5 pl-5 marker:text-ink-3">
-          {notes.map((n) => (
-            <li key={n.id} className="text-[14px] leading-snug text-ink-2">
-              {onShowNotes ? (
-                <button
-                  type="button"
-                  onClick={() => onShowNotes([n.id])}
-                  className="text-left hover:text-ink hover:underline"
-                  aria-label={`Show on the board: ${n.text} (${n.author})`}
-                >
-                  {n.text} <span className="text-ink-3">({n.author})</span>
-                </button>
-              ) : (
-                <span>
-                  {n.text} <span className="text-ink-3">({n.author})</span>
-                </span>
-              )}
-            </li>
-          ))}
-        </ul>
-      </div>
+          <ul className="mt-2 flex list-disc flex-col gap-1.5 pl-5 marker:text-ink-3 [overflow-wrap:anywhere]">
+            {notes.map((n) => (
+              <li key={n.id} className="text-[14px] leading-snug text-ink-2">
+                {onShowNotes ? (
+                  <button
+                    type="button"
+                    onClick={() => onShowNotes([n.id])}
+                    className="text-left hover:text-ink hover:underline"
+                    aria-label={`Show on the board: ${n.text} (${n.author})`}
+                  >
+                    {n.text} <span className="text-ink-3">({n.author})</span>
+                  </button>
+                ) : (
+                  <span>
+                    {n.text} <span className="text-ink-3">({n.author})</span>
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
     </header>
   );
 }

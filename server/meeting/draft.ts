@@ -1,4 +1,5 @@
 import type { DraftDecision, MeetingDraft, MeetingDraftLooseT, MeetingDraftView } from '../../shared/meeting-schema.ts';
+import { meetingProblem } from '../../shared/meeting-schema.ts';
 import type { Segment } from './segment.ts';
 
 // Meeting addendum 7: checks after the draft parses. Pure, tested in draft.test.ts.
@@ -80,7 +81,8 @@ export function checkDraft(d: MeetingDraftLooseT | MeetingDraft, segments: Segme
   // 6. Too little left.
   if (total < CAPS.minNotes || sections.length < 1)
     throw new InvalidDraft(`Only ${total} usable notes were left after checking source ids and duplicates. Return at least ${CAPS.minNotes} notes, each with sourceIds that appear in the meeting.`);
-  return { title: cleanText(d.title).slice(0, 60), problem: cleanText(d.problem).slice(0, 300), sections, decisions: checkDecisions(d, sections, ids, known) };
+  const title = cleanText(d.title).slice(0, 60);
+  return { title, problem: meetingProblem({ title, problem: cleanText(d.problem), sections }), sections, decisions: checkDecisions(d, sections, ids, known) };
 }
 
 /**

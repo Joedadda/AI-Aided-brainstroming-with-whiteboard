@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import type { Exploration } from '../../shared/types.ts';
+import { nanoid } from 'nanoid';
+import type { ChatMessage } from '../../shared/types.ts';
 import type { AgentErrorCode, AgentIdea, AgentPlan, AgentStage } from '../../shared/agent-schema.ts';
 import { useStore } from '../store.ts';
 import { applyPlan, countsLine, resultLine, type ApplyResult } from './agent-apply.ts';
@@ -14,7 +15,9 @@ import { getProfile } from './profile.ts';
 
 export type AgentRun = {
   boardId: string;
+  explorationId?: string;
   instruction: string;
+  prompt: string;
   scopeNoteIds: string[];
   status: 'running' | 'ready' | 'error' | 'applied';
   stage: AgentStage;
@@ -32,26 +35,38 @@ export type AgentRun = {
 };
 
 interface AgentState {
+  workspace: string | null;
+  openingCanvas: boolean;
+  activeCanvasId: string | null;
+  canvasDrafts: Record<string, string>;
   /** The Agent panel is showing in the sidebar. */
   open: boolean;
   run: AgentRun | null;
-  recent: string[];
   /** What was asked and answered on this board, for the report. */
-  log: { role: 'user' | 'assistant'; text: string }[];
-  /** The saved private canvas behind the full-screen view, once something needed it. */
-  session: { ex: Exploration; sent: number } | null;
+  log: (ChatMessage & { explorationId?: string })[];
   /** "The agent's plan is ready" toast, when the plan lands while the panel is closed. */
   toast: boolean;
   /** Bumped to ask the panel to focus the command box. */
   focusTick: number;
+  sidebarPrompt?: { boardId: string; text: string; noteIds: string[] };
   /** Clarify follow-up: the next instruction goes with the earlier one. */
   clarified?: { instruction: string; question: string };
 }
 
-export const useAgent = create<AgentState>()(() => ({ open: false, run: null, recent: [], log: [], session: null, toast: false, focusTick: 0 }));
+export const useAgent = create<AgentState>()(() => ({ workspace: null, openingCanvas: false, activeCanvasId: null, canvasDrafts: {}, open: false, run: null, log: [], toast: false, focusTick: 0 }));
 
-export function logExchange(...entries: { role: 'user' | 'assistant'; text: string }[]) {
-  const clean = entries.map((e) => ({ role: e.role, text: e.text.trim().slice(0, 8000) })).filter((e) => e.text);
+export function setCanvasDraft(explorationId: string, text: string) {
+  useAgent.setState((s) => {
+    if (s.activeCanvasId !== explorationId) return s;
+    const canvasDrafts = { ...s.canvasDrafts };
+    if (text) canvasDrafts[explorationId] = text;
+    else delete canvasDrafts[explorationId];
+    return { canvasDrafts };
+  });
+}
+
+function logForCanvas(explorationId: string | undefined, entries: { role: 'user' | 'assistant'; text: string }[]) {
+  const clean = entries.map((e) => ({ id: nanoid(), at: Date.now(), role: e.role, text: e.text.trim().slice(0, 8000), explorationId })).filter((e) => e.text);
   useAgent.setState((s) => ({ log: [...s.log, ...clean].slice(-100) }));
 }
 
@@ -68,6 +83,11 @@ export function openAgent() {
 
 export function closeAgent() {
   useAgent.setState({ open: false });
+}
+
+export function askInAgentSidebar(boardId: string, text: string, noteIds: string[]) {
+  useAgent.setState({ sidebarPrompt: { boardId, text, noteIds } });
+  openAgent();
 }
 
 export const agentVisible = () => useAgent.getState().open && useStore.getState().dockOpen;
@@ -101,23 +121,25 @@ async function sse(path: string, body: unknown, on: (event: string, data: Record
 }
 
 /** Start a run, or refine the open one ("Change it"). */
-export async function startRun(boardId: string, instruction: string, opts: { refinement?: string } = {}) {
+export async function startRun(boardId: string, instruction: string, opts: { refinement?: string; explorationId?: string; scopeNoteIds?: string[] } = {}) {
   const text = instruction.trim();
   const refining = Boolean(opts.refinement);
   const cur = useAgent.getState().run;
   if (!text && !refining) return;
-  if (cur?.status === 'running') return;
+  if (useAgent.getState().openingCanvas || cur?.status === 'running') return;
   cancelRun(false);
   const selected = useStore.getState().selected.filter((id) => useStore.getState().cards.some((c) => c.id === id));
-  const clarified = !refining ? useAgent.getState().clarified : undefined;
-  const scopeNoteIds = refining && cur ? cur.scopeNoteIds : selected;
-  useAgent.setState((s) => ({
+  const clarified = !refining && cur?.boardId === boardId && cur.explorationId === opts.explorationId ? useAgent.getState().clarified : undefined;
+  const scopeNoteIds = refining && cur ? cur.scopeNoteIds : (opts.scopeNoteIds ?? selected);
+  const explorationId = refining && cur ? cur.explorationId : opts.explorationId;
+  useAgent.setState({
     clarified: undefined,
     toast: false,
-    recent: refining ? s.recent : [text, ...s.recent.filter((r) => r !== text)].slice(0, 3),
     run: {
       boardId,
+      explorationId,
       instruction: refining && cur ? cur.instruction : text,
+      prompt: opts.refinement ?? text,
       scopeNoteIds,
       status: 'running',
       stage: 'reading',
@@ -128,7 +150,7 @@ export async function startRun(boardId: string, instruction: string, opts: { ref
       edits: {},
       refinements: refining && cur ? cur.refinements + 1 : 0,
     },
-  }));
+  });
   const ctl = new AbortController();
   controller = ctl;
   const timer = window.setTimeout(() => ctl.abort('timeout'), TIMEOUT);
@@ -140,7 +162,7 @@ export async function startRun(boardId: string, instruction: string, opts: { ref
         instruction: refining && cur ? cur.instruction : text,
         selectedNoteIds: scopeNoteIds,
         selectedSectionIds: [],
-        sessionId: useAgent.getState().session?.ex.id,
+        sessionId: explorationId,
         ...(refining && cur?.runId ? { runId: cur.runId, refinement: opts.refinement } : {}),
         ...(clarified ? { clarified } : {}),
       },
@@ -152,7 +174,10 @@ export async function startRun(boardId: string, instruction: string, opts: { ref
           const plan = data.plan as AgentPlan;
           const hasIdeas = plan.steps.some((s) => s.type === 'proposeIdeas');
           patchRun({ status: 'ready', plan, runId: data.runId as string, ideasPending: hasIdeas });
-          logExchange({ role: 'user', text: opts.refinement ?? text }, { role: 'assistant', text: plan.answer?.text ?? plan.clarify?.question ?? plan.summary });
+          logForCanvas(useAgent.getState().run?.explorationId, [
+            { role: 'user', text: opts.refinement ?? text },
+            { role: 'assistant', text: plan.answer?.text ?? plan.clarify?.question ?? plan.summary },
+          ]);
           if (plan.clarify) useAgent.setState((s) => ({ clarified: { instruction: s.run!.instruction, question: plan.clarify!.question }, focusTick: s.focusTick + 1 }));
           if (!agentVisible()) useAgent.setState({ toast: true });
         } else if (event === 'idea') {
@@ -196,6 +221,7 @@ const post = (path: string, body: unknown) => fetch(path, { method: 'POST', head
 
 /** Apply the plan currently shown, as one undo step. */
 export function applyRun() {
+  if (useAgent.getState().openingCanvas) return;
   const run = useAgent.getState().run;
   const p = getProfile();
   if (!run?.plan || !p) return;
@@ -210,7 +236,7 @@ export function applyRun() {
   controller?.abort('cancel'); // late ideas are dropped once applied
   controller = null;
   patchRun({ status: 'applied', result: r, resultText: resultLine(r), ideasPending: false });
-  logExchange({ role: 'assistant', text: `Applied to the board: ${resultLine(r)}` });
+  logForCanvas(run.explorationId, [{ role: 'assistant', text: `Applied to the board: ${resultLine(r)}` }]);
   if (run.runId) void post(`/api/agent-runs/${run.runId}/applied`, { counts: { sections: r.sections, moved: r.moved, added: r.added, ideas: r.ideas, locks: r.locks, skipped: r.skipped } });
   // Frame the changed area once React Flow has the new nodes.
   if (r.ids.length) window.setTimeout(() => useStore.setState({ reveal: r.ids }), 450);
@@ -228,8 +254,9 @@ export function undoApplied() {
   useAgent.setState({ run: null });
 }
 
-/** Leaving the board cancels the run; partial ideas are dropped (PRD 9). */
-export function resetAgent() {
+/** Scope in-memory work to a board and profile, including when its canvas opens. */
+export function setAgentWorkspace(workspace: string | null) {
+  if (useAgent.getState().workspace === workspace) return;
   cancelRun(false);
-  useAgent.setState({ run: null, toast: false, clarified: undefined, open: false, log: [], session: null });
+  useAgent.setState({ workspace, openingCanvas: false, activeCanvasId: null, canvasDrafts: {}, run: null, toast: false, clarified: undefined, sidebarPrompt: undefined, open: false, log: [] });
 }

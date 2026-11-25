@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { BoardCanvas } from './canvas/BoardCanvas.tsx';
+import { setAgentWorkspace } from './lib/agent.ts';
 import { api } from './lib/api.ts';
 import { connect, disconnect } from './lib/board.ts';
 import { useProfile } from './lib/profile.ts';
 import { go, useRoute } from './lib/router.ts';
+import { refreshSessions } from './lib/sessions.ts';
 import { Canvas } from './screens/Canvas.tsx';
+import { DecisionView } from './screens/DecisionCard.tsx';
 import { Home } from './screens/Home.tsx';
 import { ProfileCard } from './screens/ProfileCard.tsx';
 import { ReportView } from './screens/ReportView.tsx';
@@ -25,6 +28,8 @@ export function App() {
   }, []);
 
   const boardId = route.name === 'home' ? null : route.boardId;
+  const userId = profile?.userId;
+  useEffect(() => setAgentWorkspace(boardId && userId ? `${userId}:${boardId}` : null), [boardId, userId]);
 
   // Stay connected to the board while moving between the board, a canvas and a report.
   useEffect(() => {
@@ -36,31 +41,29 @@ export function App() {
     if (!boardId) disconnect();
   }, [boardId]);
 
-  // The person's own open canvases, for the board's "Your private canvases" list.
   useEffect(() => {
-    if (!profile || !boardId || route.name !== 'board') return;
-    api
-      .myExplorations(boardId)
-      .then(({ explorations }) => useStore.setState({ myCanvases: explorations }))
-      .catch(() => {});
-  }, [profile, boardId, route.name]);
+    if (userId && boardId) void refreshSessions(boardId);
+  }, [userId, boardId, route.name]);
 
   const reportTitle = useStore((s) => (route.name === 'report' ? s.reports.find((r) => r.id === route.reportId)?.body.title : undefined));
+  const decisionTitle = useStore((s) => route.name === 'decision'
+    ? s.decisions.find((d) => d.id === route.decisionId)?.text ?? (route.decisionId === 'legacy' ? s.meta.decision?.title : undefined)
+    : undefined);
   const boardTitle = useStore((s) => s.meta.title);
 
   // Client-side route changes reset nothing, so do it by hand: a title per view, and focus to its heading.
-  const routeKey = route.name === 'home' ? 'home' : route.name === 'board' ? 'board' : route.name === 'canvas' ? route.explorationId : route.reportId;
+  const routeKey = route.name === 'home' ? 'home' : route.name === 'board' ? 'board' : route.name === 'canvas' ? route.explorationId : route.name === 'decision' ? route.decisionId : route.reportId;
   const firstRender = useRef(true);
   useEffect(() => {
     const view =
-      route.name === 'home' ? 'Start' : route.name === 'board' ? boardTitle || 'Untitled board' : route.name === 'canvas' ? 'Private canvas' : (reportTitle ?? 'Report');
+      route.name === 'home' ? 'Start' : route.name === 'board' ? boardTitle || 'Untitled board' : route.name === 'canvas' ? 'Private canvas' : route.name === 'decision' ? (decisionTitle ?? 'Decision') : (reportTitle ?? 'Report');
     document.title = `${view} · Split, Explore, Merge`;
     if (firstRender.current) {
       firstRender.current = false;
       return;
     }
     if (route.name === 'board') requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-route-focus]')?.focus());
-  }, [routeKey, reportTitle, route.name, boardTitle]);
+  }, [routeKey, reportTitle, decisionTitle, route.name, boardTitle]);
 
   if (!profile) {
     return (
@@ -124,7 +127,15 @@ export function App() {
           ) : route.name === 'board' ? (
             <BoardCanvas key={route.boardId} boardId={route.boardId} />
           ) : route.name === 'canvas' ? (
-            <Canvas key={route.explorationId} boardId={route.boardId} explorationId={route.explorationId} />
+            <Canvas
+              key={`${userId}:${route.boardId}:${route.explorationId}`}
+              boardId={route.boardId}
+              explorationId={route.explorationId}
+              reviewReport={route.reviewReport}
+              initialExploration={route.handoff?.viewerId === userId ? route.handoff?.exploration : undefined}
+            />
+          ) : route.name === 'decision' ? (
+            <DecisionView key={route.decisionId} boardId={route.boardId} decisionId={route.decisionId} />
           ) : (
             <ReportView key={route.reportId} boardId={route.boardId} reportId={route.reportId} />
           )}

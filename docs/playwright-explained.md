@@ -1,5 +1,7 @@
 # Playwright, explained for the prototype
 
+Run `npm run test:e2e` from the Prototype folder to check private reports. The script uses the installed Google Chrome in headless mode, starts its own local server with sample AI replies, and saves test data only in memory. A failing run records a trace in `test-results/`.
+
 Written for an interaction design student, not a software engineer. Plain words first, jargon defined when it appears.
 
 ## What Playwright is

@@ -97,12 +97,12 @@ Do not put private data in the Yjs document. Every connected client receives the
 
 User flow:
 1. Person clicks "New whiteboard". The server creates a board and the client opens it. The title field is empty and optional.
-2. Person double-clicks the canvas (or presses a button) to place a sticky note and types an idea.
+2. Person selects the Sticky note tool, clicks the canvas to place a note, and types an idea.
 3. If the title is empty, the AI proposes one once there is enough context (section 6.1).
 4. If a note reads as large, a quiet prompt offers to turn it into a section (section 6.2).
 
 Requirements:
-- WB-1: Create, open and delete a sticky note. Notes drag, resize is optional, text edits are collaborative (Y.Text). New notes appear at the double-click position, or at the centre of the current viewport when created from a button.
+- WB-1: Create, open and delete a sticky note. Notes drag and grow vertically to show all their text. Text edits are collaborative (Y.Text). With the Sticky note tool active, click to place a note at the pointer or press Enter to place one at the centre of the current viewport.
 - WB-2: Board has an optional title. Empty shows "Untitled board".
 - WB-3: Sections are titled containers. Dragging a section moves its child notes. Notes can be dragged in and out.
 - WB-4: Every note shows its author colour and name on hover or as a small tag.
@@ -176,7 +176,7 @@ Requirements:
 ## 10. Ask AI about selected notes
 
 Requirements:
-- SN-1: When one or more notes are selected, a small bar appears with four preset asks and a text box: "What is strong here", "What is missing", "What could go wrong", "How do these connect".
+- SN-1: The sparkle button on the selection bar opens four preset asks and a text box. Submitting a typed question opens the Agent sidebar and sends it there with the selected notes in scope.
 - SN-2: The answer streams into a panel beside the selection. It refers to notes as [N1], [N2] and the UI maps those labels back to the notes and highlights them on hover.
 - SN-3: If a point relies on a note that was not selected, the model says so ("Based on a note outside your selection").
 - SN-4: The answer is private. A "Save as note" button creates a note with `origin: 'ai'` placed by the asker.
@@ -192,12 +192,13 @@ Requirements:
 - PC-1: "Take cards with you" (the selected notes) creates an exploration. The server stores a snapshot of the problem, the notes and the ready chips. Selected notes get `reservedBy` set (MP-5).
 - PC-2: The canvas shows chips in a row above the chat. Chips are read-only in this build: problem, each taken note, and each board context chip.
 - PC-3: Chat streams over SSE. Each message sends the full history. Keep the system prompt and the chips first and unchanged between turns so prompt caching can apply.
-- PC-4: "Make report" returns the fixed template as structured JSON (section 11.4 and the template in `project_context.md` section 8). The draft is shown in a report view with the status label "Draft".
-- PC-5: "Approve" or "Regenerate". No section editing in this build.
+- PC-4: "Make report" and direct requests such as "Draft a report now" open the same private report review. Short conversations produce a short summary, up to two findings and up to two open questions. Keep evidence, objections and rejected directions only when they add something the conversation covered. List only explicitly selected notes and omit the list when there are none.
+- PC-5: The author can edit the draft, regenerate it or approve it. An optional Decision field at the bottom records what the author decided. The AI leaves it empty. A saved decision carries over when the draft is regenerated.
 - PC-6: Approve marks the report approved in the database, then the client writes the approved report into `reports` in the Yjs document with the contributor's name. The notes' `reservedBy` clears.
 - PC-7: The report view shows the summary first. Other sections collapse. Report column about 680 px.
 - PC-8: Report drafts and chat history are private. Only the approved report reaches the board.
 - PC-9: Decision card is one static mock card shown beside the approved report, labelled "Decision (mock)". It does not store anything.
+- PC-10: The Close canvas button returns to the board immediately. The private canvas stays available under Your notes.
 
 ## 12. API
 
@@ -269,7 +270,7 @@ Authorisation: an exploration, message, opinion, suggestion or draft report can 
 ```json
 {
   "title": "string",
-  "summary": "string, 2 to 4 sentences, reads on its own",
+  "summary": "string, one or two sentences on what was explored and where it ended",
   "findings": [{ "text": "string", "reason": "string" }],
   "evidence": [{ "text": "string", "source": "string|null", "supports": "finding index" }],
   "objections": [{ "text": "string", "reason": "string" }],
@@ -279,6 +280,8 @@ Authorisation: an exploration, message, opinion, suggestion or draft report can 
 ```
 
 Rules: no finding, objection or rejected direction without a reason. Anything uncertain goes to `open_questions`. Validate with a schema (zod). On a parse or validation failure, retry once, then return an error the UI can show with a "Try again" button.
+
+The saved report may also include an optional `decision` string entered by its author. The generated report schema excludes this field.
 
 ### 12.5 Link fetch and summary
 

@@ -1,6 +1,6 @@
 import { Dialog } from '@base-ui/react/dialog';
 import { useEffect, useRef, useState } from 'react';
-import { isEmptyReport, type ReportBody } from '../../shared/report-schema.ts';
+import { isEmptyReport, reportNotes, type ReportBody } from '../../shared/report-schema.ts';
 import type { Exploration } from '../../shared/types.ts';
 import { api } from '../lib/api.ts';
 import { board } from '../lib/board.ts';
@@ -35,12 +35,13 @@ export function DraftSheet({
   error?: string;
   onRegenerate: () => void;
   /** The author saved edits to the draft. */
-  onSaved: (body: ReportBody, editedAt: number) => void;
+  onSaved: (id: string, body: ReportBody, editedAt: number) => void;
   onApproved?: () => void;
 }) {
   const profile = useProfile((s) => s.profile)!;
   const draft = ex.draft;
   const [approving, setApproving] = useState(false);
+  const [preparingRegeneration, setPreparingRegeneration] = useState(false);
   const [approveError, setApproveError] = useState('');
   // The draft is always editable in place (Micro PRD RPT-5). Edits save themselves shortly after typing stops.
   const [editing, setEditing] = useState<EditableReport | null>(() => (draft ? toEditable(draft.body) : null));
@@ -48,8 +49,10 @@ export function DraftSheet({
   const [showAll, setShowAll] = useState(false);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [saveError, setSaveError] = useState('');
-  const latest = useRef(editing);
-  latest.current = editing;
+  const latest = useRef({ draft, editing });
+  latest.current = { draft, editing };
+  const saveTail = useRef(Promise.resolve(true));
+  const lastSaved = useRef<{ id: string; json: string } | null>(null);
 
   // A new draft (Regenerate) replaces whatever was being edited.
   useEffect(() => {
@@ -62,37 +65,43 @@ export function DraftSheet({
   const allErrors = editing ? validate(editing) : {};
   // Errors show for boxes the person has left, or for all of them after an approve attempt.
   const errors = showAll ? allErrors : Object.fromEntries(Object.entries(allErrors).filter(([k]) => touched.has(k)));
-  // Nothing explored, or everything removed: there is nothing to put on the board.
   const nothingToShare = Boolean(editing && isEmptyReport(fromEditable(editing)));
   const dirty = Boolean(draft && editing && JSON.stringify(fromEditable(editing)) !== JSON.stringify(draft.body));
 
-  const save = async (): Promise<boolean> => {
-    const cur = latest.current;
-    if (!draft || !cur) return true;
-    if (Object.keys(validate(cur)).length) return false;
-    const body = fromEditable(cur);
-    if (JSON.stringify(body) === JSON.stringify(draft.body)) return true;
-    setSaveState('saving');
-    setSaveError('');
-    try {
-      const r = await api.saveReport(draft.id, body);
-      onSaved(r.body, r.editedAt);
-      setSaveState('saved');
-      return true;
-    } catch (e) {
-      setSaveError(e instanceof Error ? e.message : 'Could not save your changes. Try again.');
-      setSaveState('error');
-      return false;
-    }
+  const save = () => {
+    const id = draft?.id;
+    // Autosave and approval use the same queue so an earlier edit cannot overwrite a later one.
+    const next = saveTail.current.then(async () => {
+      const { draft: current, editing: edited } = latest.current;
+      if (!current || current.id !== id || !edited || Object.keys(validate(edited)).length) return false;
+      const body = fromEditable(edited);
+      const previous = lastSaved.current?.id === id ? lastSaved.current.json : JSON.stringify(current.body);
+      if (JSON.stringify(body) === previous) return true;
+      setSaveState('saving');
+      setSaveError('');
+      try {
+        const r = await api.saveReport(current.id, body);
+        lastSaved.current = { id: current.id, json: JSON.stringify(r.body) };
+        onSaved(current.id, r.body, r.editedAt);
+        setSaveState('saved');
+        return true;
+      } catch (e) {
+        setSaveError(e instanceof Error ? e.message : 'Could not save your changes. Try again.');
+        setSaveState('error');
+        return false;
+      }
+    });
+    saveTail.current = next;
+    return next;
   };
 
   // Save 800 ms after the last change, when the report is valid.
   useEffect(() => {
-    if (!dirty || Object.keys(allErrors).length) return;
+    if (!dirty || approving || preparingRegeneration || drafting || Object.keys(allErrors).length) return;
     const t = setTimeout(() => void save(), 800);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editing]);
+  }, [editing, dirty, approving, preparingRegeneration, drafting]);
 
   const onFieldBlur = (e: React.FocusEvent) => {
     const id = (e.target as HTMLElement).id;
@@ -104,7 +113,12 @@ export function DraftSheet({
     const first = Object.keys(allErrors)[0];
     if (first) {
       setShowAll(true);
-      setTimeout(() => document.getElementById(first)?.focus());
+      setTimeout(() => {
+        const field = document.getElementById(first);
+        const details = field?.closest('details');
+        if (details) details.open = true;
+        field?.focus();
+      });
       return;
     }
     setApproving(true);
@@ -128,7 +142,7 @@ export function DraftSheet({
         editedAt: r.editedAt,
         cardNoteIds: r.noteIds,
       });
-      board.reserve(r.noteIds, false);
+      board.reserve(r.reservedNoteIds, false);
       useProfile.getState().markRead(r.reportId);
       useStore.setState({ justLanded: r.reportId });
       go({ name: 'board', boardId });
@@ -139,11 +153,22 @@ export function DraftSheet({
     }
   };
 
+  const regenerate = async () => {
+    if ((draft?.editedAt || dirty) && !confirm('Replace your edits with a new draft? Your saved decision will carry over.')) return;
+    if (draft && dirty && !Object.keys(allErrors).length) {
+      setPreparingRegeneration(true);
+      const saved = await save();
+      setPreparingRegeneration(false);
+      if (!saved) return;
+    }
+    onRegenerate();
+  };
+
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Backdrop className="fixed inset-0 z-40 bg-ink/25 transition-opacity duration-200 data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
-        <Dialog.Popup className="sheet fixed inset-y-0 right-0 z-50 flex w-[min(760px,92vw)] flex-col border-l border-line bg-bg shadow-raised outline-none">
+        <Dialog.Popup className="sheet fixed inset-y-0 right-0 z-50 flex w-[min(760px,92vw)] flex-col border-l border-line bg-surface shadow-raised outline-none">
           <div className="flex items-center justify-between border-b border-line px-8 py-4">
             <Dialog.Title className="text-[15px] font-semibold">Draft report</Dialog.Title>
             <Dialog.Close render={<Button variant="ghost" size="sm" />}>Keep exploring</Dialog.Close>
@@ -161,18 +186,18 @@ export function DraftSheet({
                   <Button onClick={onRegenerate}>Try again</Button>
                 </div>
               ) : draft && editing ? (
-                <div className="flex flex-col gap-8" onBlur={onFieldBlur}>
+                <fieldset disabled={approving || preparingRegeneration} className="flex min-w-0 flex-col gap-6" onBlur={onFieldBlur}>
                   <ReportHeader
                     title={editing.title}
                     status="draft"
                     who={profile.name}
                     at={draft.createdAt}
-                    edited={Boolean(draft.editedAt)}
-                    notes={ex.snapshot.notes}
+                    edited={Boolean(draft.editedAt || draft.body.decision)}
+                    notes={draft.selectedNotes ?? reportNotes(ex.snapshot)}
                     titleField={<TitleField value={editing.title} error={errors['report-title']} onChange={(v) => setEditing((e) => (e ? { ...e, title: v } : e))} />}
                   />
                   <ReportEditor value={editing} onChange={(fn) => setEditing((e) => (e ? fn(e) : e))} errors={errors} />
-                </div>
+                </fieldset>
               ) : null}
             </div>
           </ScrollArea>
@@ -201,15 +226,12 @@ export function DraftSheet({
             </p>
             <div className="flex gap-2">
               <Button
-                disabled={drafting || approving}
-                onClick={() => {
-                  if ((draft?.editedAt || dirty) && !confirm('Regenerate the draft? Your edits will be lost.')) return;
-                  onRegenerate();
-                }}
+                disabled={drafting || approving || preparingRegeneration}
+                onClick={() => void regenerate()}
               >
                 Regenerate
               </Button>
-              <Button variant="primary" disabled={!draft || drafting || approving || nothingToShare} onClick={() => void approve()}>
+              <Button variant="primary" disabled={!draft || drafting || approving || preparingRegeneration || nothingToShare} onClick={() => void approve()}>
                 {approving ? 'Sharing…' : 'Approve and share'}
               </Button>
             </div>

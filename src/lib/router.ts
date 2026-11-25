@@ -1,18 +1,21 @@
 import { create } from 'zustand';
+import type { Exploration } from '../../shared/types.ts';
 
 // Path-based routes, so a board link (/b/<boardId>) can be shared (MP-8).
 export type Route =
   | { name: 'home' }
   | { name: 'board'; boardId: string }
-  | { name: 'canvas'; boardId: string; explorationId: string }
-  | { name: 'report'; boardId: string; reportId: string };
+  | { name: 'canvas'; boardId: string; explorationId: string; reviewReport?: boolean; handoff?: { viewerId: string; exploration: Exploration } }
+  | { name: 'report'; boardId: string; reportId: string }
+  | { name: 'decision'; boardId: string; decisionId: string };
 
 export function parse(path: string): Route {
-  const m = /^\/b\/([A-Za-z0-9_-]+)(?:\/(canvas|report)\/([A-Za-z0-9_-]+))?\/?$/.exec(path);
+  const m = /^\/b\/([A-Za-z0-9_-]+)(?:\/(canvas|report|decision)\/([A-Za-z0-9_-]+))?\/?$/.exec(path);
   if (!m) return { name: 'home' };
   const [, boardId, kind, id] = m;
   if (kind === 'canvas') return { name: 'canvas', boardId, explorationId: id };
   if (kind === 'report') return { name: 'report', boardId, reportId: id };
+  if (kind === 'decision') return { name: 'decision', boardId, decisionId: id };
   return { name: 'board', boardId };
 }
 
@@ -26,6 +29,8 @@ export function pathOf(r: Route): string {
       return `/b/${r.boardId}/canvas/${r.explorationId}`;
     case 'report':
       return `/b/${r.boardId}/report/${r.reportId}`;
+    case 'decision':
+      return `/b/${r.boardId}/decision/${r.decisionId}`;
   }
 }
 

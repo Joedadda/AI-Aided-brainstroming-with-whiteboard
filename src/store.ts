@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { Coverage, MeetingDraftView } from '../shared/meeting-schema.ts';
-import type { BoardMeta, BoardReport, Card, ContextChip, Decision, Peer, Section } from '../shared/types.ts';
+import type { BoardMeta, BoardReport, Card, ContextChip, Decision, Peer, PrivateSession, Section } from '../shared/types.ts';
 
 /** A session being built from a meeting, kept by source id so it survives the panel closing. */
 export type MeetingBuild =
@@ -9,13 +9,6 @@ export type MeetingBuild =
   | { status: 'error'; error: string };
 
 export type ConnStatus = 'connecting' | 'connected' | 'reconnecting' | 'refused';
-
-export interface OpenCanvas {
-  id: string;
-  noteCount: number;
-  messageCount: number;
-  createdAt: number;
-}
 
 /** A private AI answer about selected notes (SN). Lives only in this browser. */
 export interface OpinionState {
@@ -35,6 +28,7 @@ interface State {
   status: ConnStatus;
   meta: BoardMeta;
   problem: string;
+  problemPosition: { x: number; y: number } | null;
   cards: Card[];
   sections: Section[];
   chips: ContextChip[];
@@ -61,14 +55,14 @@ interface State {
   lockToast?: { id: string; text: string; notice?: string };
   /** Large-idea prompts for this person's own notes (6.2). */
   largeIdea: Record<string, { sectionTitle: string; reason: string }>;
-  myCanvases: OpenCanvas[];
+  sessions: PrivateSession[];
+  sessionScope?: string;
   opinion: OpinionState | null;
   /** Which left sidebar panel is showing (Board, Context, AI ideas, Answer). */
   dock: 'board' | 'context' | 'ideas' | 'answer';
   /** The sidebar panel is open beside the icon rail; closed leaves the rail only. */
   dockOpen: boolean;
-  /** The Problem card floats on the board when true. Kept per browser, across boards. */
-  problemPinned: boolean;
+  contextView: 'plain' | 'meeting';
   /** Meeting addendum: builds by source id, the open review sheet, and the "draft is ready" toast. */
   meetingBuilds: Record<string, MeetingBuild>;
   meetingSheet?: { sourceId: string; chipId: string };
@@ -87,6 +81,7 @@ export const initialBoardState = {
   status: 'connecting' as ConnStatus,
   meta: emptyMeta,
   problem: '',
+  problemPosition: null,
   cards: [] as Card[],
   sections: [] as Section[],
   chips: [] as ContextChip[],
@@ -104,35 +99,18 @@ export const initialBoardState = {
   titleToast: undefined,
   lockToast: undefined,
   largeIdea: {},
-  myCanvases: [] as OpenCanvas[],
+  sessions: [] as PrivateSession[],
   opinion: null,
   dock: 'board' as State['dock'],
   dockOpen: true,
+  contextView: 'plain' as State['contextView'],
   meetingBuilds: {} as Record<string, MeetingBuild>,
   meetingSheet: undefined,
   meetingToast: undefined,
   meetingTick: 0,
 };
 
-const PINNED_KEY = 'problem-pinned';
-const readPinned = () => {
-  try {
-    return localStorage.getItem(PINNED_KEY) !== 'false';
-  } catch {
-    return true;
-  }
-};
-export function setProblemPinned(on: boolean) {
-  try {
-    localStorage.setItem(PINNED_KEY, String(on));
-  } catch {
-    // Storage blocked: keep the choice for this visit only.
-  }
-  useStore.setState({ problemPinned: on });
-}
-
 export const useStore = create<State>()((set) => ({
   ...initialBoardState,
-  problemPinned: readPinned(),
   set: (patch) => set(patch),
 }));

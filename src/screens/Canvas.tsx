@@ -1,41 +1,54 @@
-import { ArrowUp, ChevronLeft } from 'lucide-react';
-import { Field } from '@base-ui/react/field';
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import type { ChatMessage, Exploration, Snapshot, SnapshotChip } from '../../shared/types.ts';
+import { ArrowUp, ChevronLeft, Minimize2, X } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import type { Exploration, SnapshotChip } from '../../shared/types.ts';
+import { AgentChat, ChatTurn, useAgentTranscript } from '../canvas/AgentChat.tsx';
+import { RunArea } from '../canvas/AgentPanel.tsx';
 import { ContextIcon, sourceLine } from '../canvas/ContextIcon.tsx';
+import { SidebarRail } from '../canvas/Dock.tsx';
+import { closeAgent, discardRun, openAgent, setCanvasDraft, useAgent } from '../lib/agent.ts';
 import { ApiError, api } from '../lib/api.ts';
-import { board } from '../lib/board.ts';
-import { useProfile } from '../lib/profile.ts';
+import { useConversation } from '../lib/conversation.ts';
 import { go } from '../lib/router.ts';
+import { refreshSessions } from '../lib/sessions.ts';
+import { animateSidebar } from '../lib/sidebar-motion.ts';
 import { useStore } from '../store.ts';
-import { Badge } from '../ui/Badge.tsx';
 import { Button } from '../ui/Button.tsx';
 import { ScrollArea } from '../ui/ScrollArea.tsx';
-import { Textarea } from '../ui/Textarea.tsx';
 import { Tooltip } from '../ui/Tooltip.tsx';
 import { cx } from '../ui/cx.ts';
 import { isEmptyReport } from '../../shared/report-schema.ts';
 import { DraftSheet } from './DraftSheet.tsx';
 import { LockedBlock } from './LockedBlock.tsx';
 
-const STARTERS = ['Give me three different directions', 'What are the strongest objections?', 'What are we not seeing?'];
+const HEADER_ICON_BUTTON = 'pressable key-quiet flex size-11 shrink-0 items-center justify-center rounded-md text-ink-2 hover:bg-surface-2 hover:text-ink disabled:cursor-not-allowed disabled:opacity-50';
 
+function minimiseToSidebar(boardId: string) {
+  animateSidebar(() => {
+    openAgent();
+    go({ name: 'board', boardId });
+  });
+}
 /** The private canvas (Build PRD 11). Everything here is served only to its owner (PC-8). */
-export function Canvas({ boardId, explorationId }: { boardId: string; explorationId: string }) {
-  const [ex, setEx] = useState<Exploration | null>(null);
+export function Canvas({ boardId, explorationId, initialExploration, reviewReport = false }: { boardId: string; explorationId: string; initialExploration?: Exploration; reviewReport?: boolean }) {
+  const [ex, setEx] = useState<Exploration | null>(() => initialExploration ?? null);
   const [error, setError] = useState<{ status: number; message: string } | null>(null);
 
   const load = useCallback(() => {
     api
       .exploration(explorationId)
-      .then(setEx)
+      .then((result) => {
+        if (result.boardId !== boardId) throw new ApiError('This private canvas belongs to a different board.', 404);
+        setEx(result);
+      })
       .catch((e) => setError({ status: e instanceof ApiError ? e.status : 0, message: e instanceof Error ? e.message : 'Could not load.' }));
-  }, [explorationId]);
-  useEffect(load, [load]);
+  }, [boardId, explorationId]);
+  useEffect(() => {
+    if (!initialExploration) load();
+  }, [initialExploration, load]);
 
   if (error) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-4 px-8 text-center">
+      <div className="flex flex-1 flex-col items-center justify-center gap-4 bg-surface px-8 text-center">
         <p className="max-w-[420px] text-ink-2">
           {error.status === 404 ? 'This private canvas belongs to someone else, or no longer exists. You will see its report on the board once they approve it.' : error.message}
         </p>
@@ -45,19 +58,48 @@ export function Canvas({ boardId, explorationId }: { boardId: string; exploratio
   }
   if (!ex) {
     return (
-      <p role="status" className="flex flex-1 items-center justify-center text-ink-3">
+      <p role="status" className="flex flex-1 items-center justify-center bg-surface text-ink-3">
         Opening your canvas…
       </p>
     );
   }
-  return <CanvasView boardId={boardId} ex={ex} setEx={setEx} />;
+  return (
+    <div className={cx('flex min-h-0 flex-1 bg-surface', initialExploration ? 'sidebar-handoff' : 'screen-enter')}>
+      <SidebarRail
+        tab="agent"
+        onSelect={(tab) => {
+          if (tab === 'agent') {
+            minimiseToSidebar(boardId);
+            return;
+          }
+          useAgent.setState({ open: false });
+          useStore.setState({ dock: tab, dockOpen: true });
+          go({ name: 'board', boardId });
+        }}
+      />
+      <CanvasView boardId={boardId} ex={ex} setEx={setEx} reviewReport={reviewReport} />
+    </div>
+  );
 }
 
-function CanvasView({ boardId, ex, setEx }: { boardId: string; ex: Exploration; setEx: (fn: (e: Exploration | null) => Exploration | null) => void }) {
+function CanvasView({ boardId, ex, setEx, reviewReport }: { boardId: string; ex: Exploration; setEx: (fn: (e: Exploration | null) => Exploration | null) => void; reviewReport: boolean }) {
+  const deciding = ex.kind === 'decide';
   const [sheetOpen, setSheetOpen] = useState(false);
   const [drafting, setDrafting] = useState(false);
   const [draftError, setDraftError] = useState<string | undefined>();
-  const [chatPending, setChatPending] = useState(false);
+  const draftInFlight = useRef(false);
+  const autoReview = useRef(reviewReport);
+  const chatPending = useConversation((s) => s.pending?.explorationId === ex.id);
+  const currentRun = useAgent((s) => s.run);
+  const run = currentRun?.explorationId === ex.id ? currentRun : null;
+  const transcript = useAgentTranscript(ex, setEx, chatPending);
+  const agentBusy = run?.status === 'running' || transcript.busy;
+  const selectedCount = (ex.snapshot.reservedNoteIds ?? ex.snapshot.notes).length;
+
+  useEffect(() => {
+    if (!deciding && ex.status === 'open' && !ex.readOnly) useAgent.setState({ activeCanvasId: ex.id });
+  }, [deciding, ex.id, ex.status, ex.readOnly]);
+
   // Locked decisions 7.4: what the person has seen. Reset when the board first syncs and after each
   // reply, so the New and Reopened marks clear after their next message.
   const synced = useStore((s) => s.synced);
@@ -67,30 +109,49 @@ function CanvasView({ boardId, ex, setEx }: { boardId: string; ex: Exploration; 
     setSeen(new Map(useStore.getState().decisions.map((d) => [d.id, d.status])));
   }, [synced, chatPending]);
 
-  const makeReport = async () => {
+  const makeReport = useCallback(async () => {
+    if (draftInFlight.current) return;
+    draftInFlight.current = true;
     setDrafting(true);
     setDraftError(undefined);
     try {
       const r = await api.makeReport(ex.id);
-      setEx((e) => (e ? { ...e, draft: { id: r.reportId, explorationId: ex.id, status: 'draft', body: r.body, createdAt: r.createdAt } } : e));
+      setEx((e) => e?.id === ex.id ? {
+        ...e,
+        draft: { id: r.reportId, explorationId: ex.id, status: 'draft', body: r.body, selectedNotes: r.selectedNotes, createdAt: r.createdAt },
+      } : e);
     } catch (e) {
       setDraftError(e instanceof Error ? e.message : 'Something went wrong');
     } finally {
+      draftInFlight.current = false;
       setDrafting(false);
     }
-  };
+  }, [ex.id, setEx]);
 
   // An empty draft ("Nothing explored yet") is replaced as soon as there is a conversation to report on.
   const staleEmpty = Boolean(ex.draft && isEmptyReport(ex.draft.body) && ex.messages.some((m) => m.role === 'assistant'));
-  const onMakeReport = () => {
+  const hasConversation = ex.messages.some((m) => m.role === 'user') && ex.messages.some((m) => m.role === 'assistant');
+  const onMakeReport = useCallback((refreshUnedited = false) => {
+    setDraftError(undefined);
     setSheetOpen(true);
-    if ((!ex.draft || staleEmpty) && !drafting) void makeReport();
+    if (!ex.draft || staleEmpty || (refreshUnedited && !ex.draft.editedAt)) void makeReport();
+  }, [ex.draft, staleEmpty, makeReport]);
+
+  useEffect(() => {
+    if (deciding || !autoReview.current || agentBusy || chatPending || ex.readOnly || ex.status !== 'open') return;
+    autoReview.current = false;
+    if (hasConversation || ex.draft) onMakeReport(true);
+  }, [deciding, agentBusy, chatPending, ex.readOnly, ex.status, hasConversation, ex.draft, onMakeReport]);
+
+  const clearActiveCanvas = () => {
+    if (run) discardRun();
+    setCanvasDraft(ex.id, '');
+    if (useAgent.getState().activeCanvasId === ex.id) useAgent.setState({ activeCanvasId: null });
   };
 
-  const closeCanvas = async () => {
-    if (!confirm('Close this canvas without a report? Your chat is kept private and the notes are released.')) return;
-    const r = await api.closeExploration(ex.id).catch(() => null);
-    if (r) board.reserve(r.noteIds, false);
+  const closeCanvas = () => {
+    closeAgent();
+    useStore.setState({ dock: 'board' });
     go({ name: 'board', boardId });
   };
 
@@ -98,35 +159,35 @@ function CanvasView({ boardId, ex, setEx }: { boardId: string; ex: Exploration; 
 
   if (ex.status === 'closed') {
     return (
-      <div className="screen-enter flex flex-1 flex-col items-center justify-center gap-4 px-8 text-center">
-        <p className="text-ink-2">This canvas is closed. If you approved a report, it is on the board.</p>
+      <div className="flex flex-1 flex-col items-center justify-center gap-4 px-8 text-center">
+        <p className="text-ink-2">{ex.decisionId ? 'Decision locked' : 'This canvas is closed. If you approved a report, it is on the board.'}</p>
+        {ex.decisionId && (
+          <>
+            <p className="max-w-lg">{ex.decisionDraft?.text}</p>
+            <Button onClick={() => go({ name: 'decision', boardId, decisionId: ex.decisionId! })}>View decision</Button>
+          </>
+        )}
         <Button onClick={() => go({ name: 'board', boardId })}>Back to the board</Button>
       </div>
     );
   }
 
   return (
-    <div className="screen-enter flex min-h-0 flex-1 flex-col">
-      <header className="flex items-center justify-between gap-4 border-b border-line px-8 py-4">
-        <div className="flex items-center gap-4">
-          <Tooltip label="Back to board">
-            <Button variant="ghost" size="sm" className="w-8 px-0" aria-label="Back to board" onClick={() => go({ name: 'board', boardId })}>
-              <ChevronLeft aria-hidden size={18} strokeWidth={1.75} className="size-[18px] shrink-0" />
-            </Button>
+    <div className="agent-expanded-panel flex min-w-0 flex-1 flex-col">
+      <header className="flex h-12 shrink-0 items-center justify-between gap-4 ps-4 pe-2">
+        <h1 className="text-[14px] font-semibold">Agent</h1>
+        <div className="flex items-center gap-1">
+          <p className="me-2 text-[13px] text-ink-3">{deciding ? 'Your chat and draft are private. Locking shares your decision with the board.' : 'Only you see this until you apply a plan or approve a report.'}</p>
+          <Tooltip label="Minimise Agent chat">
+            <button type="button" className={HEADER_ICON_BUTTON} aria-label="Minimise Agent chat" onClick={() => minimiseToSidebar(boardId)}>
+              <Minimize2 aria-hidden size={24} strokeWidth={2} className="shrink-0" />
+            </button>
           </Tooltip>
-          <div className="flex items-center gap-2">
-            <h1 className="text-[15px] font-semibold">Private canvas</h1>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <p className="text-[13px] text-ink-3">Nothing here reaches the board until you approve a report.</p>
-          {/* Same size as Make report beside it, so the hover and pressed shapes match. */}
-          <Button variant="ghost" onClick={() => void closeCanvas()}>
-            Close canvas
-          </Button>
-          <Button variant="primary" onClick={onMakeReport} disabled={chatPending}>
-            {drafting ? 'Drafting…' : ex.draft && !staleEmpty ? 'Review draft' : 'Make report'}
-          </Button>
+          <Tooltip label="Close canvas">
+            <button type="button" className={HEADER_ICON_BUTTON} aria-label="Close canvas" onClick={closeCanvas}>
+              <X aria-hidden size={24} strokeWidth={2} className="shrink-0" />
+            </button>
+          </Tooltip>
         </div>
       </header>
       <DraftSheet
@@ -137,32 +198,64 @@ function CanvasView({ boardId, ex, setEx }: { boardId: string; ex: Exploration; 
         drafting={drafting}
         error={draftError}
         onRegenerate={() => void makeReport()}
-        onSaved={(body, editedAt) => setEx((e) => (e?.draft ? { ...e, draft: { ...e.draft, body, editedAt } } : e))}
+        onApproved={clearActiveCanvas}
+        onSaved={(id, body, editedAt) => setEx((e) => (e?.draft?.id === id ? { ...e, draft: { ...e.draft, body, editedAt } } : e))}
       />
 
       <div className="flex min-h-0 flex-1">
-        <section aria-label="Chat with the AI" className="flex min-w-0 flex-1 flex-col border-r border-line">
-          {/* Locked decisions 7.2: their own block, above the chips row and never in it. */}
-          <LockedBlock boardId={boardId} seen={seen} />
-          <ContextChips ex={ex} setEx={setEx} />
-          <Chat ex={ex} setEx={setEx} pending={chatPending} setPending={setChatPending} />
+        <section aria-label="Chat with the AI" className="flex min-w-0 flex-1 flex-col">
+          <AgentChat
+            boardId={boardId}
+            ex={ex}
+            setEx={setEx}
+            run={run}
+            busy={agentBusy || drafting}
+            onRequestReport={deciding ? undefined : () => onMakeReport(true)}
+            intro={(
+              <>
+                <LockedBlock boardId={boardId} seen={seen} />
+                {deciding && (
+                  <section aria-label="What the AI was given" className="flex flex-col gap-2">
+                    <h2 className="text-[13px] font-semibold">What the AI was given</h2>
+                    <ul className="flex flex-wrap gap-2">
+                      {ex.snapshot.reports?.map(({ id, body }) => (
+                        <li key={id} className="rounded-full border border-line px-3 py-1 text-[13px]">{body.title}</li>
+                      ))}
+                    </ul>
+                  </section>
+                )}
+                <div className="flex flex-col items-start gap-2">
+                  <PrivateContextChips chips={ex.snapshot.chips.filter((c) => c.private)} />
+                  <AddOwnContext ex={ex} setEx={setEx} />
+                </div>
+                {!deciding && <p className="text-[13px] text-ink-3">
+                  Working on: {selectedCount ? `${selectedCount} selected ${selectedCount === 1 ? 'note' : 'notes'}` : 'the whole board'}
+                </p>}
+              </>
+            )}
+            footer={(
+              <>
+                {run && <RunArea boardId={boardId} run={run} />}
+                {transcript.error && <p role="alert" className="text-[13px] text-danger">{transcript.error} <Button size="sm" onClick={transcript.retry}>Retry</Button></p>}
+              </>
+            )}
+          />
         </section>
-        <aside className="flex w-[360px] shrink-0 flex-col gap-6 overflow-y-auto px-6 py-6" aria-label="Findings">
-          <section aria-labelledby="findings-heading">
-            <div className="mb-2 flex items-center justify-between">
-              <h2 id="findings-heading" className="text-[13px] font-semibold">
-                Findings
-              </h2>
-            </div>
+        {deciding ? <DecisionDraftPanel boardId={boardId} ex={ex} setEx={setEx} autoDraft={reviewReport} chatBusy={chatPending || agentBusy} /> : <aside className="w-80 shrink-0 overflow-y-auto px-5 py-4" aria-labelledby="findings-heading">
+          <div className="flex flex-col gap-3">
+            <h2 id="findings-heading" className="text-[13px] font-semibold">Findings</h2>
+            <Button variant="primary" className="w-full" onClick={() => onMakeReport()} disabled={drafting || chatPending || agentBusy || (!ex.draft && !hasConversation)}>
+              {drafting ? 'Drafting…' : ex.draft && !staleEmpty ? 'Review draft' : 'Make report'}
+            </Button>
             {drafting && !ex.draft ? (
-              <p role="status" className="rounded-md border border-ai-line bg-ai-bg px-4 py-5 text-[13px] text-ai">
+              <p role="status" className="text-[13px] text-ink-2">
                 The AI is drafting the report…
               </p>
             ) : ex.draft ? (
               <div className="flex flex-col gap-3">
                 <ul className="flex flex-col gap-2">
                   {ex.draft.body.findings.map((f, i) => (
-                    <li key={i} className="rounded-md border border-ai-line bg-ai-bg px-3 py-2.5 text-[13px] leading-snug">
+                    <li key={i} className="text-[13px] leading-relaxed">
                       <p className="text-ink">{f.text}</p>
                       <p className="mt-1 text-ink-2">
                         <span className="font-medium text-ink-3">Reason: </span>
@@ -171,19 +264,86 @@ function CanvasView({ boardId, ex, setEx }: { boardId: string; ex: Exploration; 
                     </li>
                   ))}
                 </ul>
-                <Button variant="secondary" size="sm" onClick={() => setSheetOpen(true)}>
-                  Review the full draft
-                </Button>
               </div>
             ) : (
-              <div className="rounded-md border border-dashed border-line-strong px-4 py-5 text-[13px] leading-relaxed text-ink-2">
-                When you make a report, the AI drafts the findings here for you to approve or regenerate.
-              </div>
+              <p className="text-[13px] leading-relaxed text-ink-2">
+                {hasConversation ? 'Make a report to turn this conversation into findings you can review.' : 'Ask the agent something first. The report is written from that conversation.'}
+              </p>
             )}
-          </section>
-        </aside>
+          </div>
+        </aside>}
       </div>
     </div>
+  );
+}
+
+function DecisionDraftPanel({ boardId, ex, setEx, autoDraft, chatBusy }: {
+  boardId: string;
+  ex: Exploration;
+  setEx: (fn: (e: Exploration | null) => Exploration | null) => void;
+  autoDraft: boolean;
+  chatBusy: boolean;
+}) {
+  const [draft, setDraft] = useState(ex.decisionDraft);
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState('');
+  const autoStarted = useRef(false);
+  const generate = useCallback(async () => {
+    setWorking(true);
+    setError('');
+    try {
+      const result = await api.draftDecision(ex.id);
+      setDraft(result);
+      setEx((current) => current?.id === ex.id ? { ...current, decisionDraft: result } : current);
+      void refreshSessions(boardId);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not draft a decision.');
+    } finally {
+      setWorking(false);
+    }
+  }, [boardId, ex.id, setEx]);
+
+  useEffect(() => {
+    if (!autoDraft || autoStarted.current || ex.decisionDraft) return;
+    autoStarted.current = true;
+    void generate();
+  }, [autoDraft, ex.decisionDraft, generate]);
+
+  const lock = async () => {
+    if (!draft?.text.trim()) return;
+    setWorking(true);
+    setError('');
+    try {
+      const { decisionId } = await api.lockSessionDecision(ex.id, draft);
+      void refreshSessions(boardId);
+      go({ name: 'decision', boardId, decisionId });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not lock the decision.');
+      setWorking(false);
+    }
+  };
+
+  return (
+    <aside aria-label="Decision draft" className="flex w-80 shrink-0 flex-col gap-3 overflow-y-auto px-5 py-4">
+      <h2 className="text-[13px] font-semibold">Decision draft</h2>
+      {!draft && <Button variant="primary" disabled={working || chatBusy} onClick={() => void generate()}>{working ? 'Drafting decision…' : 'Draft decision'}</Button>}
+      {draft && (
+        <>
+          <label className="flex flex-col gap-1 text-[13px]">
+            Decision
+            <textarea className="rounded-md border border-line p-2" rows={4} maxLength={300} value={draft.text} disabled={working} onChange={(e) => setDraft({ ...draft, text: e.target.value })} />
+          </label>
+          <label className="flex flex-col gap-1 text-[13px]">
+            Reasons
+            <textarea className="rounded-md border border-line p-2" rows={5} maxLength={500} value={draft.reasons} disabled={working} onChange={(e) => setDraft({ ...draft, reasons: e.target.value })} />
+          </label>
+          <Button variant="primary" disabled={working || chatBusy || !draft.text.trim()} onClick={() => void lock()}>
+            {working ? 'Locking decision…' : 'Lock decision'}
+          </Button>
+        </>
+      )}
+      {error && <p role="alert" className="text-[13px] text-danger">{error}</p>}
+    </aside>
   );
 }
 
@@ -191,8 +351,8 @@ function CanvasView({ boardId, ex, setEx }: { boardId: string; ex: Exploration; 
 function SavedCanvas({ boardId, ex }: { boardId: string; ex: Exploration }) {
   const report = useStore((s) => s.reports.find((r) => r.explorationId === ex.id));
   return (
-    <div className="screen-enter flex min-h-0 flex-1 flex-col">
-      <header className="flex items-center justify-between gap-4 border-b border-line px-8 py-4">
+    <div className="flex min-w-0 flex-1 flex-col">
+      <header className="flex h-12 shrink-0 items-center justify-between gap-4 ps-4 pe-2">
         <div className="flex items-center gap-4">
           <Tooltip label="Back to board">
             <Button variant="ghost" size="sm" className="w-8 px-0" aria-label="Back to board" onClick={() => go({ name: 'board', boardId })}>
@@ -214,18 +374,17 @@ function SavedCanvas({ boardId, ex }: { boardId: string; ex: Exploration }) {
         </div>
       </header>
       <div className="flex min-h-0 flex-1">
-        <section aria-label={`${ex.ownerName}'s chat with the AI`} className="flex min-w-0 flex-1 flex-col border-r border-line">
-          <ContextChips ex={ex} />
+        <section aria-label={`${ex.ownerName}'s chat with the AI`} className="flex min-w-0 flex-1 flex-col">
           <ScrollArea className="flex-1" label="Conversation">
-            <div className="mx-auto flex max-w-[680px] flex-col gap-4 px-6 py-6">
+            <div className="mx-auto flex max-w-[720px] flex-col gap-5 px-4 py-4 text-[15px] leading-relaxed">
               {ex.messages.map((m) => (
-                <Message key={m.id} message={m} author={ex.ownerName} />
+                <ChatTurn key={m.id} message={m} author={ex.ownerName} />
               ))}
-              {report && <p className="py-2 text-center text-[13px] text-ink-3">{ex.ownerName} made the report and approved it for the board.</p>}
+              {report && <p className="text-[13px] text-ink-3">{ex.ownerName} made the report and approved it for the board.</p>}
             </div>
           </ScrollArea>
         </section>
-        <aside className="flex w-[360px] shrink-0 flex-col gap-6 overflow-y-auto px-6 py-6" aria-label="Findings">
+        <aside className="w-80 shrink-0 overflow-y-auto px-5 py-4" aria-label="Findings">
           <section aria-labelledby="findings-heading">
             <div className="mb-2 flex items-center justify-between">
               <h2 id="findings-heading" className="text-[13px] font-semibold">
@@ -234,7 +393,7 @@ function SavedCanvas({ boardId, ex }: { boardId: string; ex: Exploration }) {
             </div>
             <ul className="flex flex-col gap-2">
               {report?.body.findings.map((f, i) => (
-                <li key={i} className="rounded-md border border-ai-line bg-ai-bg px-3 py-2.5 text-[13px] leading-snug">
+                <li key={i} className="text-[13px] leading-relaxed">
                   <p className="text-ink">{f.text}</p>
                   <p className="mt-1 text-ink-2">
                     <span className="font-medium text-ink-3">Reason: </span>
@@ -250,65 +409,34 @@ function SavedCanvas({ boardId, ex }: { boardId: string; ex: Exploration }) {
   );
 }
 
-/**
- * PC-2: chips showing exactly what the AI was given. The board part is fixed when the notes
- * were taken. The person can add their own context here: it reaches only this canvas.
- */
-function ContextChips({ ex, setEx }: { ex: Exploration; setEx?: (fn: (e: Exploration | null) => Exploration | null) => void }) {
+function PrivateContextChips({ chips }: { chips: SnapshotChip[] }) {
+  if (!chips.length) return null;
   return (
-    <GivenChips snapshot={ex.snapshot} readOnly={ex.readOnly} ownerName={ex.ownerName}>
-      {setEx && !ex.readOnly && <AddOwnContext ex={ex} setEx={setEx} />}
-    </GivenChips>
-  );
-}
-
-/** The chips themselves, also used by the full-screen Agent view. */
-export function GivenChips({ snapshot: s, readOnly, ownerName, children }: { snapshot: Snapshot; readOnly?: boolean; ownerName?: string; children?: ReactNode }) {
-  const shared = s.chips.filter((c) => !c.private);
-  const mine = s.chips.filter((c) => c.private);
-  const who = readOnly ? `Added privately by ${ownerName}` : 'Added by you. Only this canvas has it.';
-  return (
-    <div className="border-b border-line bg-surface-2/60 px-6 py-4">
-      <p id="chips-label" className="mb-2 text-[14px] font-semibold text-ink">
-        What the AI was given
-      </p>
-      <ul aria-labelledby="chips-label" className="flex flex-wrap gap-2">
-        {s.problem && <Chip kind="Problem" text={s.problem} />}
-        {s.notes.map((n) => (
-          <Chip key={n.id} kind="Note" text={n.text} by={`From ${n.author}`} />
-        ))}
-        {shared.map((c) => (
-          <Chip key={c.id} kind={c.type === 'link' ? 'Link' : 'Context'} text={c.title} by={`AI summary: ${c.summary}`} context={{ type: c.type, full: c.source }} />
-        ))}
-        {mine.map((c) => (
-          <Chip
-            key={c.id}
-            kind={`${readOnly ? `${ownerName}'s` : 'Your'} ${c.type === 'link' ? 'link' : 'context'}`}
-            text={c.title}
-            by={`${c.unread ? 'The page could not be read, so the AI only knows the link. ' : c.type === 'text' ? 'The AI reads this in full. ' : `AI summary: ${c.summary} `}${who}`}
-            own
-            context={{ type: c.type, full: c.source }}
-          />
-        ))}
-      </ul>
-      {children}
-    </div>
+    <ul aria-label="Your private context" className="flex flex-wrap gap-2">
+      {chips.map((c) => (
+        <li key={c.id} className="inline-flex h-7 max-w-[260px] items-center gap-1 rounded-sm border border-dashed border-ink/30 bg-surface pr-2 pl-0.5 text-[13px]">
+          <ContextIcon type={c.type} source={sourceLine(c.type, undefined, c.source)} />
+          <Tooltip label={c.unread ? 'The page could not be read, so the AI only knows the link.' : c.type === 'text' ? 'The AI reads this in full.' : `AI summary: ${c.summary}`}>
+            <span tabIndex={0} className="truncate text-ink">
+              <span className="font-semibold text-ink-2">{c.type === 'link' ? 'Your link' : 'Your context'} </span>
+              {c.title}
+            </span>
+          </Tooltip>
+        </li>
+      ))}
+    </ul>
   );
 }
 
 /** Personal context (spec 7.3): text or a link that only this exploration sees. */
-export function AddOwnContext({
+function AddOwnContext({
   ex,
   setEx,
-  startOpen = false,
-  note = 'Only you and the AI in this canvas see it. It never reaches the board.',
 }: {
   ex: Exploration;
   setEx: (fn: (e: Exploration | null) => Exploration | null) => void;
-  startOpen?: boolean;
-  note?: string;
 }) {
-  const [open, setOpen] = useState(startOpen);
+  const [open, setOpen] = useState(false);
   const [value, setValue] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -334,13 +462,13 @@ export function AddOwnContext({
 
   if (!open) {
     return (
-      <button type="button" onClick={() => setOpen(true)} className="mt-3 text-[13px] font-medium text-accent hover:underline">
+      <button type="button" onClick={() => setOpen(true)} className="text-[13px] font-medium text-accent hover:underline">
         Add your own context
       </button>
     );
   }
   return (
-    <form onSubmit={add} className="mt-3 flex max-w-[680px] flex-col gap-2">
+    <form onSubmit={add} className="flex w-full max-w-[680px] flex-col gap-2">
       <label htmlFor="own-context" className="text-[13px] font-semibold">
         Add your own context
       </label>
@@ -381,228 +509,12 @@ export function AddOwnContext({
       )}
       <div className="flex items-center justify-between gap-2">
         <span role="status" className="text-[12px] text-ink-3">
-          {busy ? (isLink ? 'Reading the page…' : 'Adding…') : note}
+          {busy ? (isLink ? 'Reading the page…' : 'Adding…') : 'Only you and the AI in this canvas see it.'}
         </span>
         <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(false)}>
           Cancel
         </Button>
       </div>
     </form>
-  );
-}
-
-function Chip({ kind, text, by, own, context }: { kind: string; text: string; by?: string; own?: boolean; context?: { type: SnapshotChip['type']; full: string } }) {
-  // Context items show their kind as an icon with the full text on hover (user request, 25 Nov),
-  // the same as in the sidebar. Problem and notes keep their word and tooltip.
-  if (context) {
-    return (
-      <li
-        className={cx(
-          'inline-flex h-7 max-w-[260px] items-center gap-1 rounded-sm border bg-surface pr-2 pl-0.5 text-[13px]',
-          own ? 'border-dashed border-ink/30' : 'border-line',
-        )}
-      >
-        <ContextIcon type={context.type} source={sourceLine(context.type, undefined, context.full)} />
-        <Tooltip label={by ?? text}>
-          <span tabIndex={0} className="truncate text-ink">
-            {own && <span className="font-semibold text-ink-2">{kind} </span>}
-            {text}
-          </span>
-        </Tooltip>
-      </li>
-    );
-  }
-  return (
-    <li>
-      <Tooltip
-        label={
-          <>
-            {text}
-            {by && <span className="mt-1 block text-white/70">{by}</span>}
-          </>
-        }
-      >
-        <span
-          tabIndex={0}
-          className={cx(
-            'inline-flex h-7 max-w-[240px] cursor-default items-center gap-1.5 rounded-sm border bg-surface px-2 text-[13px]',
-            kind === 'Problem' ? 'border-ink/20' : own ? 'border-dashed border-ink/30' : 'border-line',
-          )}
-        >
-          <span className="shrink-0 font-semibold text-ink-2">{kind}</span>
-          <span className="truncate text-ink">{text}</span>
-        </span>
-      </Tooltip>
-    </li>
-  );
-}
-
-function Chat({
-  ex,
-  setEx,
-  pending,
-  setPending,
-}: {
-  ex: Exploration;
-  setEx: (fn: (e: Exploration | null) => Exploration | null) => void;
-  pending: boolean;
-  setPending: (b: boolean) => void;
-}) {
-  const me = useProfile((s) => s.profile!.name);
-  const [draft, setDraft] = useState('');
-  const [error, setError] = useState('');
-  const [streaming, setStreaming] = useState('');
-  const viewportRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
-
-  const count = ex.messages.length;
-  useEffect(() => {
-    const el = viewportRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [count, pending, streaming]);
-  useEffect(() => inputRef.current?.focus(), []);
-
-  const send = async (text: string) => {
-    const t = text.trim();
-    if (!t || pending) return;
-    setDraft('');
-    setError('');
-    setPending(true);
-    const tempId = `tmp-${Date.now()}`;
-    setEx((e) => (e ? { ...e, messages: [...e.messages, { id: tempId, role: 'user', text: t, at: Date.now() }] } : e));
-    let acc = '';
-    try {
-      // PC-3: the reply streams in over SSE.
-      const done = await api.sendMessage(ex.id, t, (d) => {
-        acc += d;
-        setStreaming(acc);
-      });
-      setEx((e) =>
-        e
-          ? {
-              ...e,
-              messages: [
-                ...e.messages.map((m) => (m.id === tempId ? { ...m, id: done.userMessageId } : m)),
-                { id: done.messageId, role: 'assistant', text: acc, at: Date.now() },
-              ],
-            }
-          : e,
-      );
-    } catch (err) {
-      // The server took the message back out, so a retry does not send it twice.
-      setEx((e) => (e ? { ...e, messages: e.messages.filter((m) => m.id !== tempId) } : e));
-      setDraft(t);
-      setError(err instanceof Error ? err.message : 'Something went wrong');
-    } finally {
-      setStreaming('');
-      setPending(false);
-      inputRef.current?.focus();
-    }
-  };
-
-  const onSubmit = (e: FormEvent) => {
-    e.preventDefault();
-    void send(draft);
-  };
-
-  return (
-    <>
-      <ScrollArea ref={viewportRef} className="flex-1" label="Conversation">
-        <div className="mx-auto flex max-w-[680px] flex-col gap-4 px-6 py-6">
-          {count === 0 && !pending && (
-            <div className="flex flex-col items-start gap-3 py-6">
-              <p className="text-[15px] text-ink-2">
-                The AI has the problem{ex.snapshot.chips.length ? ', ' : ' and '}your {ex.snapshot.notes.length === 1 ? 'note' : 'notes'}
-                {ex.snapshot.chips.length ? ' and the context' : ''}. If you have notes of your own, add them above first. Then start anywhere.
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {STARTERS.map((s) => (
-                  <Button key={s} variant="ai" size="sm" onClick={() => void send(s)}>
-                    {s}
-                  </Button>
-                ))}
-              </div>
-            </div>
-          )}
-          {ex.messages.map((m) => (
-            <Message key={m.id} message={m} author={me} />
-          ))}
-          {pending &&
-            (streaming ? (
-              <Message message={{ id: 'stream', role: 'assistant', text: streaming, at: 0 }} author={me} live />
-            ) : (
-              <Thinking />
-            ))}
-        </div>
-      </ScrollArea>
-
-      <form onSubmit={onSubmit} className="border-t border-line px-6 py-4">
-        <div className="mx-auto max-w-[680px]">
-          {error && (
-            <p role="alert" className="mb-2 text-[13px] text-danger">
-              {error} Your message is back in the box.
-            </p>
-          )}
-          {/* Outer radius = button radius (6) + inset (8) + border (1). */}
-          <Field.Root className="relative flex items-end gap-2 rounded-[15px] border border-line bg-surface p-2 shadow-card focus-within:border-ink-3 keys:focus-within:outline-2 keys:focus-within:outline-offset-2 keys:focus-within:outline-accent">
-            <Field.Label className="sr-only">Message the AI</Field.Label>
-            <Textarea
-              ref={inputRef}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) onSubmit(e);
-              }}
-              rows={2}
-              placeholder="Ask for directions, objections, or what is missing"
-              className="max-h-40 min-h-10 flex-1 resize-none bg-transparent px-2 py-1.5 text-[15px] leading-snug outline-none placeholder:text-ink-3 focus-visible:outline-none"
-            />
-            <Button type="submit" variant="secondary" size="sm" disabled={!draft.trim() || pending}>
-              Send
-            </Button>
-          </Field.Root>
-          <p className="mt-1.5 text-[12px] text-ink-3">Enter to send. Shift and Enter for a new line.</p>
-        </div>
-      </form>
-    </>
-  );
-}
-
-function Message({ message, author, live }: { message: ChatMessage; author: string; live?: boolean }) {
-  if (message.role === 'user') {
-    return (
-      <div className="msg-enter flex flex-col items-end">
-        <span className="mb-1 text-[12px] text-ink-3">{author}</span>
-        <p className="max-w-[85%] rounded-lg rounded-tr-sm bg-surface px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap shadow-card [overflow-wrap:anywhere]">
-          {message.text}
-        </p>
-      </div>
-    );
-  }
-  return (
-    <div className={cx('flex flex-col items-start', !live && 'msg-enter')} aria-live={live ? 'off' : undefined}>
-      <span className="mb-1">
-        <Badge tone="ai">AI</Badge>
-      </span>
-      <p className="max-w-[92%] rounded-lg rounded-tl-sm border border-ai-line bg-ai-bg px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap text-ink [overflow-wrap:anywhere]">
-        {message.text}
-        {live && <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-ai align-middle" />}
-      </p>
-    </div>
-  );
-}
-
-function Thinking() {
-  return (
-    <div className="flex flex-col items-start" role="status">
-      <span className="mb-1">
-        <Badge tone="ai">AI</Badge>
-      </span>
-      <span className="dots flex gap-1 rounded-lg border border-ai-line bg-ai-bg px-4 py-3.5" aria-label="The AI is thinking">
-        <span className="size-1.5 rounded-full bg-ai" />
-        <span className="size-1.5 rounded-full bg-ai" />
-        <span className="size-1.5 rounded-full bg-ai" />
-      </span>
-    </div>
   );
 }

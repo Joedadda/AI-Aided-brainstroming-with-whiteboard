@@ -6,7 +6,7 @@ import { go } from '../lib/router.ts';
 import { Badge } from '../ui/Badge.tsx';
 import { Button } from '../ui/Button.tsx';
 
-/** Start screen: a fresh copy of one of the three Split Buddy case boards, or a blank board. */
+/** Start screen: create a blank board or open a fresh copy of a Split Buddy example. */
 export function Home() {
   const recent = useProfile((s) => s.recent);
   const profile = useProfile((s) => s.profile);
@@ -44,17 +44,17 @@ export function Home() {
         </p>
       </div>
       <div className="flex flex-wrap gap-3">
-        <Button variant="primary" onClick={() => void create('case')} disabled={busy !== null}>
-          {busy === 'case' ? 'Creating…' : 'Start a fresh case'}
+        <Button variant="primary" onClick={() => void create('blank')} disabled={busy !== null}>
+          {busy === 'blank' ? 'Creating…' : 'Start a new board'}
+        </Button>
+        <Button onClick={() => void create('case')} disabled={busy !== null}>
+          {busy === 'case' ? 'Creating…' : 'Start a sample case'}
         </Button>
         <Button onClick={() => void create('mid')} disabled={busy !== null}>
           {busy === 'mid' ? 'Creating…' : 'Start mid-session'}
         </Button>
         <Button onClick={() => void create('example')} disabled={busy !== null}>
           {busy === 'example' ? 'Creating…' : 'See a finished example'}
-        </Button>
-        <Button onClick={() => void create('blank')} disabled={busy !== null}>
-          {busy === 'blank' ? 'Creating…' : 'New whiteboard'}
         </Button>
       </div>
       {error && (

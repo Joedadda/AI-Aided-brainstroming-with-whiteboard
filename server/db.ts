@@ -61,6 +61,13 @@ CREATE TABLE IF NOT EXISTS suggestions (
   used INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS message_ideas (
+  message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  suggestion_id TEXT NOT NULL REFERENCES suggestions(id) ON DELETE CASCADE,
+  conflicts_with TEXT,
+  conflict_line TEXT,
+  PRIMARY KEY (message_id, suggestion_id)
+);
 CREATE TABLE IF NOT EXISTS opinions (
   id TEXT PRIMARY KEY,
   board_id TEXT NOT NULL,
@@ -118,6 +125,21 @@ try {
   db.exec('ALTER TABLE reports ADD COLUMN edited_at INTEGER NULL');
 } catch {
   // The column already exists.
+}
+
+if (!db.prepare('PRAGMA table_info(reports)').all().some((col) => col.name === 'selected_notes_json')) {
+  db.exec('ALTER TABLE reports ADD COLUMN selected_notes_json TEXT NULL');
+}
+
+const explorationColumns = new Set(db.prepare('PRAGMA table_info(explorations)').all().map((col) => col.name));
+for (const [name, type] of [
+  ['kind', "TEXT NOT NULL DEFAULT 'explore'"],
+  ['report_ids_json', "TEXT NOT NULL DEFAULT '[]'"],
+  ['last_used_at', 'INTEGER'],
+  ['decision_draft_json', 'TEXT'],
+  ['decision_id', 'TEXT'],
+]) {
+  if (!explorationColumns.has(name)) db.exec(`ALTER TABLE explorations ADD COLUMN ${name} ${type}`);
 }
 
 // Whiteboard agent (Whiteboard_Agent_PRD 6.5): owner-only run log. The plan stays private until applied.

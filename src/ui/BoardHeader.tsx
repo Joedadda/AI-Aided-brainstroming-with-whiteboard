@@ -4,7 +4,7 @@ import { api } from '../lib/api.ts';
 import { board, refreshPresence } from '../lib/board.ts';
 import { NOTE_COLORS, USER_COLORS, noteColorOf, openAsAnotherPerson, useProfile } from '../lib/profile.ts';
 import type { StickyColor } from '../../shared/types.ts';
-import { UserPlus } from 'lucide-react';
+import { Link, UserPlus } from 'lucide-react';
 import { boardLink } from '../lib/router.ts';
 import { useStore } from '../store.ts';
 import { Badge } from './Badge.tsx';
@@ -64,7 +64,7 @@ export function BoardTitle({ boardId }: { boardId: string }) {
       // so it reads as "the AI is naming this", not a flicker.
       await new Promise((r) => setTimeout(r, Math.max(0, 1400 - (Date.now() - started))));
       // Set directly (user decision, 24 Nov): no Accept step. A title someone typed meanwhile wins.
-      // It is an ordinary edit, so Ctrl+Z or retyping replaces it; the "AI title" badge marks it.
+      // It is an ordinary edit, so Ctrl+Z or retyping replaces it.
       const el = inputRef.current;
       const typing = el && (document.activeElement === el || el.value.trim());
       if (!useStore.getState().meta.title && !typing) board.setTitle(title, 'ai');
@@ -125,7 +125,10 @@ export function BoardTitle({ boardId }: { boardId: string }) {
         }}
         maxLength={80}
         size={Math.max(14, Math.min(40, (value || 'Untitled board').length + 2))}
-        className="h-8 max-w-[360px] min-w-0 shrink truncate rounded-sm bg-transparent px-2 text-[15px] font-semibold placeholder:font-normal placeholder:text-ink-3 hover:bg-surface-2 focus-visible:bg-surface-2"
+        className={cx(
+          'h-8 max-w-[360px] min-w-0 shrink truncate rounded-sm bg-transparent px-2 text-[15px] font-semibold placeholder:font-normal placeholder:text-ink-3 hover:bg-surface-2 focus-visible:bg-surface-2',
+          meta.kind === 'example' && '[field-sizing:content]',
+        )}
       />
         {naming && (
           <span aria-hidden className="ai-naming-text pointer-events-none absolute inset-y-0 left-2 flex items-center text-[15px] font-semibold whitespace-nowrap">
@@ -136,8 +139,18 @@ export function BoardTitle({ boardId }: { boardId: string }) {
       <span role="status" className="sr-only">
         {naming ? 'The AI is naming this board.' : ''}
       </span>
-      {meta.title && meta.titleSource === 'ai' && <Badge tone="ai">AI title</Badge>}
-      {meta.kind === 'example' && <Badge tone="draft">Finished example</Badge>}
+      {meta.kind === 'example' && (
+        <Tooltip label="This is a finished example.">
+          <span
+            tabIndex={0}
+            role="img"
+            aria-label="Finished example"
+            className="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-neutral-200 text-[14px] leading-none font-bold text-black"
+          >
+            <span aria-hidden>!</span>
+          </span>
+        </Tooltip>
+      )}
       {meta.kind === 'mid' && <Badge tone="draft">Mid-session example</Badge>}
     </div>
   );
@@ -186,30 +199,32 @@ const initials = (n: string) =>
 // ---------- Share link (MP-8) ----------
 
 export function ShareLink({ boardId }: { boardId: string }) {
-  const [copied, setCopied] = useState(false);
-  const link = boardLink(boardId);
+  const [status, setStatus] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const reset = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(reset.current), []);
   return (
-    <div className="flex items-center gap-1 rounded-[11px] border border-line bg-surface-2 p-0.5 min-[1600px]:pl-3">
-      {/* The address shows on wide screens; the button always copies it. */}
-      <span className="hidden max-w-[220px] truncate text-[13px] text-ink-2 tabular-nums min-[1600px]:inline" title={link}>
-        {link.replace(/^https?:\/\//, '')}
-      </span>
+    <>
       <Button
         size="sm"
         variant="primary"
-        className="h-7"
         onClick={async () => {
-          await navigator.clipboard.writeText(link).catch(() => {});
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1600);
+          window.clearTimeout(reset.current);
+          try {
+            await navigator.clipboard.writeText(boardLink(boardId));
+            setStatus('copied');
+          } catch {
+            setStatus('failed');
+          }
+          reset.current = window.setTimeout(() => setStatus('idle'), 1600);
         }}
       >
-        {copied ? 'Copied' : 'Copy board link'}
+        <Link aria-hidden size={15} strokeWidth={1.75} />
+        {status === 'copied' ? 'Copied' : status === 'failed' ? 'Couldn’t copy' : 'Copy link'}
       </Button>
       <span className="sr-only" aria-live="polite">
-        {copied ? 'Board link copied' : ''}
+        {status === 'copied' ? 'Board link copied' : status === 'failed' ? 'Could not copy the board link.' : ''}
       </span>
-    </div>
+    </>
   );
 }
 

@@ -83,6 +83,15 @@ async function stream<D>(path: string, body: unknown, onDelta: (t: string) => vo
 }
 
 export const api = {
+  sessions: (boardId: string) =>
+    call<{ sessions: import('../../shared/types.ts').PrivateSession[] }>('GET', `/api/boards/${boardId}/sessions`),
+  startDecision: (boardId: string, reportIds: string[]) =>
+    call<{ explorationId: string }>('POST', '/api/explorations', { boardId, reportIds, kind: 'decide' }),
+  draftDecision: (id: string) =>
+    call<import('../../shared/types.ts').DecisionDraft>('POST', `/api/explorations/${id}/decision-draft`, {}, TIMEOUT.report),
+  lockSessionDecision: (id: string, draft: import('../../shared/types.ts').DecisionDraft) =>
+    call<{ decisionId: string }>('POST', `/api/explorations/${id}/lock-decision`, draft),
+  discardSession: (id: string) => call<{ ok: true }>('POST', `/api/explorations/${id}/discard`, {}),
   health: () => call<{ ok: boolean; mock: boolean }>('GET', '/api/health'),
   createProfile: (name: string, color: string) => call<{ userId: string; token: string; name: string; color: string }>('POST', '/api/profile', { name, color }),
   updateProfile: (patch: { name?: string; color?: string }) => call<{ userId: string; name: string; color: string }>('PATCH', '/api/profile', patch),
@@ -105,16 +114,16 @@ export const api = {
 
   myExplorations: (boardId: string) =>
     call<{ explorations: { id: string; status: string; noteCount: number; messageCount: number; createdAt: number }[] }>('GET', `/api/boards/${boardId}/explorations`),
-  createExploration: (boardId: string, noteIds: string[], fromOpinionId?: string) =>
-    call<{ explorationId: string; snapshot: Snapshot; noteIds: string[] }>('POST', '/api/explorations', { boardId, noteIds, fromOpinionId }),
+  openExploration: (boardId: string, noteIds: string[], messages: Exploration['messages'], fromOpinionId?: string, explorationId?: string) =>
+    call<{ explorationId: string; noteIds: string[] }>('POST', '/api/explorations', { boardId, noteIds, messages, fromOpinionId, explorationId }),
   exploration: (id: string) => call<Exploration>('GET', `/api/explorations/${id}`),
-  agentSession: (body: { boardId: string; noteIds: string[]; messages: { role: 'user' | 'assistant'; text: string }[]; explorationId?: string; sent: number }) =>
-    call<Exploration>('POST', '/api/explorations/agent', body),
+  saveAgentMessages: (id: string, messages: Exploration['messages']) =>
+    call<{ messages: Exploration['messages'] }>('POST', `/api/explorations/${id}/agent-messages`, messages),
   addPrivateContext: (id: string, type: 'link' | 'text', value: string) =>
     call<{ chip: SnapshotChip; snapshot: Snapshot }>('POST', `/api/explorations/${id}/context`, { type, value }, TIMEOUT.ai),
-  sendMessage: (id: string, content: string, onDelta: (t: string) => void) =>
-    stream<{ messageId: string; userMessageId: string }>(`/api/explorations/${id}/messages`, { content }, onDelta),
-  makeReport: (id: string) => call<{ reportId: string; status: 'draft'; body: ReportBody; createdAt: number }>('POST', `/api/explorations/${id}/report`, {}, TIMEOUT.report),
+  sendMessage: (id: string, content: string, onDelta: (t: string) => void, options?: { ideas?: boolean; noteIds?: string[] }) =>
+    stream<{ userMessage: Exploration['messages'][number]; reply: Exploration['messages'][number] }>(`/api/explorations/${id}/messages`, { content, ...options }, onDelta),
+  makeReport: (id: string) => call<{ reportId: string; status: 'draft'; body: ReportBody; selectedNotes: Snapshot['notes']; createdAt: number }>('POST', `/api/explorations/${id}/report`, {}, TIMEOUT.report),
   approve: (reportId: string) =>
     call<{
       reportId: string;
@@ -126,6 +135,7 @@ export const api = {
       contributorColor: string;
       explorationId: string;
       noteIds: string[];
+      reservedNoteIds: string[];
     }>('POST', `/api/reports/${reportId}/approve`, {}),
   saveReport: (reportId: string, body: ReportBody) => call<{ body: ReportBody; editedAt: number }>('PUT', `/api/reports/${reportId}`, { body }),
   // ---- meeting addendum 10 ----

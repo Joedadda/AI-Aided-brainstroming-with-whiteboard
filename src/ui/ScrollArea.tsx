@@ -4,12 +4,13 @@ import { cx } from './cx.ts';
 
 export const ScrollArea = forwardRef<
   HTMLDivElement,
-  { children: ReactNode; className?: string; viewportClassName?: string; label?: string }
->(function ScrollArea({ children, className, viewportClassName, label }, ref) {
+  { children: ReactNode; className?: string; viewportClassName?: string; label?: string; onScroll?: () => void }
+>(function ScrollArea({ children, className, viewportClassName, label, onScroll }, ref) {
   return (
     <BaseScrollArea.Root className={cx('relative min-h-0', className)}>
       <BaseScrollArea.Viewport
         ref={ref}
+        onScroll={onScroll}
         aria-label={label}
         className={cx('h-full overscroll-contain', viewportClassName)}
       >

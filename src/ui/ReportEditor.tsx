@@ -1,6 +1,6 @@
 import { Plus, Trash2 } from 'lucide-react';
 import { useRef, type ReactNode } from 'react';
-import type { ReportBody } from '../../shared/report-schema.ts';
+import { REPORT_DECISION_LIMIT, type ReportBody } from '../../shared/report-schema.ts';
 import { Button } from './Button.tsx';
 import { Select } from './Select.tsx';
 import { cx } from './cx.ts';
@@ -24,6 +24,7 @@ export interface EditableReport {
   objections: Reasoned[];
   rejected_directions: Reasoned[];
   open_questions: Question[];
+  decision: string;
 }
 
 let seq = 0;
@@ -38,6 +39,7 @@ export function toEditable(b: ReportBody): EditableReport {
     objections: b.objections.map((o) => ({ k: key(), ...o })),
     rejected_directions: b.rejected_directions.map((r) => ({ k: key(), ...r })),
     open_questions: b.open_questions.map((q) => ({ k: key(), text: q.text })),
+    decision: b.decision ?? '',
   };
 }
 
@@ -51,6 +53,7 @@ export function fromEditable(e: EditableReport): ReportBody {
     objections: e.objections.map((o) => ({ text: t(o.text), reason: t(o.reason) })),
     rejected_directions: e.rejected_directions.map((r) => ({ text: t(r.text), reason: t(r.reason) })),
     open_questions: e.open_questions.map((q) => ({ text: t(q.text) })),
+    ...(t(e.decision) ? { decision: t(e.decision) } : {}),
   };
 }
 
@@ -76,6 +79,7 @@ export function validate(e: EditableReport): Record<string, string> {
   e.open_questions.forEach((x) => {
     if (blank(x.text)) errs[`${x.k}-text`] = 'Write the question, or remove it.';
   });
+  if (e.decision.trim().length > REPORT_DECISION_LIMIT) errs['report-decision'] = `Keep the decision under ${REPORT_DECISION_LIMIT} characters.`;
   return errs;
 }
 
@@ -212,40 +216,6 @@ export function ReportEditor({
           </section>
         )}
 
-        <ListSection title="Objections" addLabel="Add objection" onAdd={() => set('objections', [...value.objections, { k: key(), text: '', reason: '' }])}>
-          {value.objections.map((o, i) => (
-            <ReasonedItem
-              key={o.k}
-              n={i + 1}
-              what="objection"
-              reasonLabel="Why it matters"
-              item={o}
-              errors={errors}
-              onChange={(p) => set('objections', value.objections.map((x) => (x.k === o.k ? { ...x, ...p } : x)))}
-              onRemove={() => set('objections', value.objections.filter((x) => x.k !== o.k))}
-            />
-          ))}
-        </ListSection>
-
-        <ListSection
-          title="Rejected directions"
-          addLabel="Add rejected direction"
-          onAdd={() => set('rejected_directions', [...value.rejected_directions, { k: key(), text: '', reason: '' }])}
-        >
-          {value.rejected_directions.map((r, i) => (
-            <ReasonedItem
-              key={r.k}
-              n={i + 1}
-              what="rejected direction"
-              reasonLabel="Dropped because"
-              item={r}
-              errors={errors}
-              onChange={(p) => set('rejected_directions', value.rejected_directions.map((x) => (x.k === r.k ? { ...x, ...p } : x)))}
-              onRemove={() => set('rejected_directions', value.rejected_directions.filter((x) => x.k !== r.k))}
-            />
-          ))}
-        </ListSection>
-
         <ListSection title="Open questions" addLabel="Add question" onAdd={() => set('open_questions', [...value.open_questions, { k: key(), text: '' }])}>
           {value.open_questions.map((q, i) => (
             <ItemShell key={q.k} n={i + 1} what="question" onRemove={() => set('open_questions', value.open_questions.filter((x) => x.k !== q.k))}>
@@ -253,7 +223,57 @@ export function ReportEditor({
             </ItemShell>
           ))}
         </ListSection>
+
+        <details open={Boolean(value.objections.length || value.rejected_directions.length) || undefined}>
+          <summary className="cursor-pointer rounded-md py-3 text-[13px] font-medium text-ink-2">Objections and rejected directions</summary>
+          <ListSection title="Objections" addLabel="Add objection" onAdd={() => set('objections', [...value.objections, { k: key(), text: '', reason: '' }])}>
+            {value.objections.map((o, i) => (
+              <ReasonedItem
+                key={o.k}
+                n={i + 1}
+                what="objection"
+                reasonLabel="Why it matters"
+                item={o}
+                errors={errors}
+                onChange={(p) => set('objections', value.objections.map((x) => (x.k === o.k ? { ...x, ...p } : x)))}
+                onRemove={() => set('objections', value.objections.filter((x) => x.k !== o.k))}
+              />
+            ))}
+          </ListSection>
+
+          <ListSection title="Rejected directions" addLabel="Add rejected direction" onAdd={() => set('rejected_directions', [...value.rejected_directions, { k: key(), text: '', reason: '' }])}>
+            {value.rejected_directions.map((r, i) => (
+              <ReasonedItem
+                key={r.k}
+                n={i + 1}
+                what="rejected direction"
+                reasonLabel="Dropped because"
+                item={r}
+                errors={errors}
+                onChange={(p) => set('rejected_directions', value.rejected_directions.map((x) => (x.k === r.k ? { ...x, ...p } : x)))}
+                onRemove={() => set('rejected_directions', value.rejected_directions.filter((x) => x.k !== r.k))}
+              />
+            ))}
+          </ListSection>
+        </details>
       </div>
+      <section>
+        <label htmlFor="report-decision" className="mb-2 block text-[15px] font-semibold text-ink">
+          Decision <span className="text-[13px] font-normal text-ink-3">(optional)</span>
+        </label>
+        <textarea
+          id="report-decision"
+          rows={2}
+          maxLength={REPORT_DECISION_LIMIT}
+          value={value.decision}
+          onChange={(e) => set('decision', e.target.value)}
+          placeholder="What did you decide?"
+          aria-invalid={Boolean(errors['report-decision'])}
+          aria-describedby={errors['report-decision'] ? 'report-decision-err' : undefined}
+          className="block w-full resize-y rounded-md border border-line bg-surface px-3 py-2 text-[15px] leading-relaxed text-ink outline-none placeholder:text-ink-3 focus-visible:border-accent aria-[invalid=true]:border-danger"
+        />
+        <Err id="report-decision" errors={errors} />
+      </section>
     </div>
   );
 }
@@ -267,11 +287,7 @@ function ListSection({ title, addLabel, onAdd, children }: { title: string; addL
   };
   return (
     <section className="flex flex-col gap-3 border-b border-line py-4">
-      <h3 className="flex items-baseline justify-between text-[15px] font-semibold text-ink">
-        {title}
-        <span className="text-[13px] font-normal text-ink-3 tabular-nums">{children.length}</span>
-      </h3>
-      {children.length === 0 && <p className="pl-6 text-[14px] text-ink-3">Nothing here yet.</p>}
+      {children.length > 0 && <h3 className="text-[15px] font-semibold text-ink">{title}</h3>}
       {children.length > 0 && (
         <ol ref={listRef} className="flex flex-col gap-4 pl-6">
           {children}

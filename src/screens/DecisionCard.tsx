@@ -1,18 +1,20 @@
-import { useState } from 'react';
+import { ChevronLeft } from 'lucide-react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import type { Decision } from '../../shared/decision-schema.ts';
 import type { BoardDecision } from '../../shared/types.ts';
 import { LockDecision, LockGlyph, MeetingLine, ReportLinkList, lockedLine, reopenedLine, scopeOf } from '../canvas/LockPanel.tsx';
 import { board } from '../lib/board.ts';
 import { useProfile } from '../lib/profile.ts';
-import { go } from '../lib/router.ts';
+import { go, pathOf } from '../lib/router.ts';
 import { useStore } from '../store.ts';
 import { Badge } from '../ui/Badge.tsx';
 import { Button } from '../ui/Button.tsx';
+import { Tooltip } from '../ui/Tooltip.tsx';
 import { cx } from '../ui/cx.ts';
 
 /**
  * Framework step 5, Decision: the Decisions area (Locked_Decisions_PRD_v2.md 6.2). Decisions in
- * force first, newest first, then reopened ones. A seeded decision with rich content expands to
+ * force first, newest first, then reopened ones. A seeded decision with rich content opens to
  * the full card (Because, Set aside, Effort, Follow-ups, Reports behind this). Old boards that
  * only have the static mock in meta.decision still show it, with its Mock tag.
  */
@@ -51,7 +53,7 @@ export function DecisionCard() {
         <ul className={cx('nowheel flex flex-col gap-3', decisions.length > 8 && 'max-h-[1200px] overflow-y-auto pr-1')}>
           {decisions.map((d) => (
             <li key={d.id}>
-              <DecisionRow d={d} />
+              <DecisionRow d={d} boardId={boardId} />
             </li>
           ))}
         </ul>
@@ -69,33 +71,92 @@ function LockButton() {
   );
 }
 
-function DecisionRow({ d }: { d: Decision }) {
+export function DecisionView({ boardId, decisionId }: { boardId: string; decisionId: string }) {
+  const decision = useStore((s) => s.decisions.find((d) => d.id === decisionId));
+  const legacy = useStore((s) => decisionId === 'legacy' ? s.meta.decision : undefined);
+  const synced = useStore((s) => s.synced);
+  const content = useRef<HTMLDivElement>(null);
+  const ready = Boolean(decision || legacy);
+  useEffect(() => {
+    if (ready) content.current?.querySelector('h1')?.focus();
+  }, [ready]);
+
+  return (
+    <div className="screen-enter flex-1 bg-surface">
+      <header className="sticky top-0 z-10 flex items-center border-b border-line bg-surface px-8 py-3">
+        <Tooltip label="Back to board">
+          <Button variant="ghost" size="sm" className="w-8 px-0" aria-label="Back to board" onClick={() => go({ name: 'board', boardId })}>
+            <ChevronLeft aria-hidden size={18} />
+          </Button>
+        </Tooltip>
+      </header>
+      <div ref={content} className="mx-auto max-w-[680px] px-8 py-10">
+        {decision ? (
+          <DecisionRow d={decision} boardId={boardId} detail />
+        ) : legacy ? (
+          <Decided d={legacy} boardId={boardId} detail />
+        ) : (
+          <p role="status" className="text-ink-2">{synced ? 'This decision is not on the board.' : 'Loading the decision…'}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DecisionTitleLink({ boardId, decisionId, children }: { boardId: string; decisionId: string; children: ReactNode }) {
+  const route = { name: 'decision', boardId, decisionId } as const;
+  return (
+    <a
+      href={pathOf(route)}
+      className="after:absolute after:inset-0 after:rounded-md hover:underline"
+      onClick={(e) => {
+        if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        e.preventDefault();
+        go(route);
+      }}
+    >
+      {children}
+    </a>
+  );
+}
+
+const clickableCard = 'relative isolate focus-within:border-accent hover:border-ink-3 [&_button]:relative [&_button]:z-10';
+
+function DecisionRow({ d, boardId, detail = false }: { d: Decision; boardId: string; detail?: boolean }) {
   const me = useProfile((s) => s.profile?.userId);
   const sections = useStore((s) => s.sections);
   const all = useStore((s) => s.decisions);
-  const [more, setMore] = useState(false);
   const open = d.status === 'locked';
   const scope = scopeOf(d, sections, all);
   const rich = d.rich;
-  const long = d.text.length > 140 || Boolean(rich) || d.reasons.length > 160;
+  const reveal = (ids: string[]) => {
+    useStore.setState({ reveal: ids });
+    if (detail) go({ name: 'board', boardId });
+  };
 
   return (
     <article
       aria-label={`${open ? 'Locked decision' : 'Reopened decision'}: ${d.text}`}
-      className={cx('flex flex-col gap-2 rounded-md border bg-surface p-3.5', open ? 'border-ink/20 shadow-card' : 'border-line')}
+      className={cx('flex flex-col bg-surface', detail
+        ? 'gap-5'
+        : cx(clickableCard, 'gap-2 rounded-md border p-3.5', open ? 'border-ink/20 shadow-card' : 'border-line'))}
     >
       <div className="flex items-start gap-2">
         <span className={cx('mt-0.5', open ? 'text-ink' : 'text-ink-3')}>
           <LockGlyph className="size-4" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className={cx('text-[14px] leading-snug font-semibold text-balance [overflow-wrap:anywhere]', open ? 'text-ink' : 'text-ink-3', !more && 'line-clamp-3')}>{d.text}</p>
-          {d.reasons && <p className={cx('mt-1 text-[13px] leading-relaxed [overflow-wrap:anywhere]', open ? 'text-ink-2' : 'text-ink-3', !more && 'line-clamp-2')}>{d.reasons}</p>}
+          {detail ? (
+            <h1 tabIndex={-1} className="text-[28px] leading-tight font-semibold text-balance [overflow-wrap:anywhere] outline-none">{d.text}</h1>
+          ) : (
+            <p className={cx('line-clamp-3 text-[14px] leading-snug font-semibold text-balance [overflow-wrap:anywhere]', open ? 'text-ink' : 'text-ink-3')}>
+              <DecisionTitleLink boardId={boardId} decisionId={d.id}>{d.text}</DecisionTitleLink>
+            </p>
+          )}
+          {d.reasons && <p className={cx('mt-1 leading-relaxed [overflow-wrap:anywhere]', detail ? 'text-[15px]' : 'line-clamp-2 text-[13px]', open ? 'text-ink-2' : 'text-ink-3')}>{d.reasons}</p>}
         </div>
         {!open && <Badge>Reopened</Badge>}
       </div>
-
-      {more && rich && <RichBody d={d} />}
 
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-ink-3">
         <span>{open ? lockedLine(d, me) : reopenedLine(d, me)}</span>
@@ -105,7 +166,7 @@ function DecisionRow({ d }: { d: Decision }) {
         {scope.sectionId ? (
           <button
             type="button"
-            onClick={() => useStore.setState({ reveal: [scope.sectionId!] })}
+            onClick={() => reveal([scope.sectionId!])}
             className="nodrag pressable key-quiet inline-flex h-6 max-w-[200px] items-center rounded-sm border border-line px-1.5 text-[12px] text-ink-2 hover:text-ink"
             title="Show this section on the board"
           >
@@ -118,23 +179,16 @@ function DecisionRow({ d }: { d: Decision }) {
         {d.sourceNoteIds.length > 0 && (
           <button
             type="button"
-            onClick={() => useStore.setState({ reveal: d.sourceNoteIds })}
+            onClick={() => reveal(d.sourceNoteIds)}
             className="nodrag text-[12px] text-accent underline decoration-accent/30 underline-offset-2 hover:decoration-accent"
           >
             {d.sourceNoteIds.length} {d.sourceNoteIds.length === 1 ? 'note' : 'notes'} behind it
           </button>
         )}
       </div>
-      {!rich && <ReportLinkList ids={d.reportIds} />}
+      {detail && rich ? <RichBody d={d} /> : !rich && <ReportLinkList ids={d.reportIds} />}
 
-      <div className="flex items-center justify-between gap-2 pt-1">
-        {long ? (
-          <button type="button" onClick={() => setMore((m) => !m)} aria-expanded={more} className="nodrag text-[13px] font-medium text-accent hover:underline">
-            {more ? 'Show less' : 'Show more'}
-          </button>
-        ) : (
-          <span />
-        )}
+      <div className="flex items-center justify-end gap-2 pt-1">
         {open ? (
           <Button size="sm" variant="ghost" className="nodrag" onClick={() => board.reopenDecision(d.id)}>
             Unlock
@@ -176,14 +230,20 @@ function RichBody({ d }: { d: Decision }) {
   );
 }
 
-function Decided({ d, boardId }: { d: BoardDecision; boardId: string }) {
+function Decided({ d, boardId, detail = false }: { d: BoardDecision; boardId: string; detail?: boolean }) {
   return (
-    <article className="flex flex-col gap-4 rounded-md border border-ink/20 bg-surface p-4 shadow-card">
+    <article className={cx('flex flex-col gap-4 bg-surface', !detail && cx(clickableCard, 'rounded-md border border-ink/20 p-4 shadow-card'))}>
       <div className="flex items-center gap-2">
         <span className="text-[12px] text-ink-3">Recorded by {d.recordedBy}</span>
       </div>
       <div className="flex flex-col gap-1.5">
-        <p className="text-[15px] leading-snug font-semibold text-balance text-ink">{d.title}</p>
+        {detail ? (
+          <h1 tabIndex={-1} className="text-[28px] leading-tight font-semibold text-balance outline-none">{d.title}</h1>
+        ) : (
+          <p className="text-[15px] leading-snug font-semibold text-balance text-ink">
+            <DecisionTitleLink boardId={boardId} decisionId="legacy">{d.title}</DecisionTitleLink>
+          </p>
+        )}
         <p className="text-[13px] leading-relaxed text-ink-2">{d.direction}</p>
       </div>
       <List title="Because" items={d.reasons} numbered />

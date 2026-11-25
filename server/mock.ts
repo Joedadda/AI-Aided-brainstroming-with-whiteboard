@@ -134,6 +134,10 @@ export const mock = {
   },
 
   canvasChatBody(s: Snapshot, last: string): string {
+    if (s.reports?.length) {
+      const summaries = s.reports.map(({ body }) => `${body.title}: ${body.summary}`).join('\n\n');
+      return `${summaries}\n\nWhich tradeoff should the decision prioritize, and what evidence would change your mind?`;
+    }
     const [a, b, c] = s.notes;
     const first = a ? q(a.text) : 'the first note';
     const second = b ? q(b.text) : 'the second note';
@@ -200,8 +204,11 @@ export const mock = {
       : [];
 
     const objections: ReportBody['objections'] = objectionLines.map((o) => {
-      const [text, ...rest] = o.split('. ');
-      return { text: bare(text) + '.', reason: rest.join('. ') || 'Raised when the AI was asked for the strongest objections.' };
+      const quoteEnd = o.startsWith('"') ? o.indexOf('"', 1) : -1;
+      const split = o.indexOf('. ', quoteEnd + 1);
+      return split < 0
+        ? { text: o, reason: 'Raised when the AI was asked for the strongest objections.' }
+        : { text: o.slice(0, split + 1), reason: o.slice(split + 2) };
     });
 
     const open_questions: ReportBody['open_questions'] = gaps.map((g) => ({ text: g }));
@@ -212,7 +219,7 @@ export const mock = {
       gaps.length && 'what the notes do not cover',
     ].filter(Boolean);
     const summary = parts.length
-      ? `${contributor} explored ${parts.join(', ')} with the AI. ${findings[0] ? findings[0].text : 'No direction was chosen.'} Nothing here has been tested with users yet.`
+      ? `${contributor} explored ${parts.join(', ')} with the AI. ${findings[0] ? findings[0].text : 'No direction was chosen.'}`
       : `${contributor} and the AI spoke briefly, but the conversation did not get to directions, objections or open questions, so there is little to report yet.`;
 
     return {

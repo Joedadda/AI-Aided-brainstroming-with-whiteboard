@@ -1,10 +1,12 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { AGENT_LIMITS, IdeasSchema, ModelPlanSchema, type AgentIdea, type AgentPlan, type ModelPlan } from '../../shared/agent-schema.ts';
+import type { Snapshot } from '../../shared/types.ts';
 import { AiError, checkLimit, json, type Msg } from '../ai.ts';
 import { newId, requireUser } from '../auth.ts';
 import { boardDoc } from '../collab.ts';
 import { q } from '../db.ts';
+import { rememberFocusedNotes } from '../exploration-notes.ts';
 import { InvalidPlan, checkPlan, mergeIdeas } from './checks.ts';
 import { buildAgentContext, type AgentContext } from './context.ts';
 import { agentMock, ideasMock } from './mock.ts';
@@ -30,7 +32,7 @@ const Body = z.object({
   instruction: z.string().max(2000),
   selectedNoteIds: z.array(z.string()).max(400).default([]),
   selectedSectionIds: z.array(z.string()).max(50).default([]),
-  /** Full-screen agent: the exploration holding this person's own context. */
+  /** The saved conversation supplying history and private context. */
   sessionId: z.string().optional(),
   /** "Change it": the run to refine, and the new line. */
   runId: z.string().optional(),
@@ -49,6 +51,10 @@ agentRouter.post('/api/boards/:boardId/agent', requireUser, async (req: Request,
   const user = req.user!;
   const doc = boardDoc(boardId);
   if (!doc) return err(res, 404, 'not_found', 'Not found.');
+  const session = body.sessionId
+    ? q.get<{ id: string; snapshot_json: string }>("SELECT id, snapshot_json FROM explorations WHERE id = ? AND user_id = ? AND board_id = ? AND status = 'open'", body.sessionId, user.id, boardId)
+    : undefined;
+  if (body.sessionId && !session) return err(res, 404, 'not_found', 'This private canvas is no longer open.');
 
   // 6.3 rule 10: an empty or over-long instruction never reaches a model.
   const refining = Boolean(body.runId);
@@ -98,12 +104,14 @@ agentRouter.post('/api/boards/:boardId/agent', requireUser, async (req: Request,
     const intentText = [instruction, body.refinement ?? '', body.clarified?.instruction ?? ''].join('\n');
     const c = buildAgentContext(doc, { userId: user.id, instruction: intentText, selectedNoteIds: body.selectedNoteIds, selectedSectionIds: body.selectedSectionIds });
     // The person's own context (owner only). Text is read in full, links by their summary.
-    const session = body.sessionId ? q.get<{ snapshot_json: string }>('SELECT snapshot_json FROM explorations WHERE id = ? AND user_id = ? AND board_id = ?', body.sessionId, user.id, boardId) : undefined;
     if (session) {
-      for (const ch of (JSON.parse(session.snapshot_json) as { chips: { title: string; summary: string; source: string; type: string; private?: boolean }[] }).chips.filter((x) => x.private)) {
+      for (const ch of (JSON.parse(session.snapshot_json) as Snapshot).chips.filter((x) => x.private)) {
         c.chips.push({ title: ch.title, summary: ch.type === 'text' ? ch.source : ch.summary });
       }
     }
+    const history = session
+      ? q.all<{ role: 'user' | 'assistant'; content: string }>('SELECT role, content FROM messages WHERE exploration_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 12', session.id).reverse()
+      : [];
     const prevPlan = prev ? (JSON.parse(prev.plan_json!) as { plan: AgentPlan }).plan : undefined;
     const messages: Msg[] = [
       { role: 'system', content: AGENT_SYSTEM },
@@ -111,7 +119,7 @@ agentRouter.post('/api/boards/:boardId/agent', requireUser, async (req: Request,
         role: 'user',
         content: agentUser(
           { ...c, instruction: refining ? instruction : line },
-          { previous: prevPlan ? { instruction, plan: prevPlan } : undefined, refinement: body.refinement?.trim(), clarified: body.clarified },
+          { history, previous: prevPlan ? { instruction, plan: prevPlan } : undefined, refinement: body.refinement?.trim(), clarified: body.clarified },
         ),
       },
     ];
@@ -144,6 +152,10 @@ agentRouter.post('/api/boards/:boardId/agent', requireUser, async (req: Request,
     }
 
     q.run('UPDATE agent_runs SET plan_json = ?, status = ?, refinements = refinements + ? WHERE id = ?', JSON.stringify({ plan }), 'planned', refining ? 1 : 0, runId);
+    if (session && body.selectedNoteIds.length) {
+      const selected = new Set(body.selectedNoteIds);
+      rememberFocusedNotes(session.id, c.notes.filter((n) => selected.has(n.id)));
+    }
     send('plan', { runId, plan });
 
     // 6.4: ideas from up to three angles in parallel, each streamed as it lands.

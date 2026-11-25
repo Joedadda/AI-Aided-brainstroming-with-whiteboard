@@ -4,7 +4,7 @@ import type { BoardReport, Peer, Section, StickyColor } from '../../shared/types
 import { coverOf, inForce, readDecisions, relockDecisionIn, reopenDecisionIn, writeDecision, type DecisionInput, type DecisionVia } from '../../shared/decision-schema.ts';
 import type { ApprovedSession } from '../../shared/meeting-schema.ts';
 import { layoutSessionDraft, type Rect } from '../../shared/session-layout.ts';
-import { STICKY, applyTextDiff, membersOf, parts, readBoard, writeNote, writeSection } from '../../shared/ydoc.ts';
+import { PROBLEM_NODE_ID, STICKY, applyTextDiff, membersOf, parts, readBoard, writeNote, writeSection } from '../../shared/ydoc.ts';
 import { initialBoardState, useStore } from '../store.ts';
 import { getProfile, myNoteColor } from './profile.ts';
 
@@ -57,6 +57,7 @@ function mirrorNow(extra: Partial<ReturnType<typeof useStore.getState>> = {}) {
     useStore.setState({
       meta: b.meta,
       problem: b.problem,
+      problemPosition: b.problemPosition,
       cards: b.notes,
       sections: b.sections,
       chips: b.chips,
@@ -218,11 +219,15 @@ export const board = {
     tx((d) => ids.forEach((id) => parts(d).notes.get(id)?.set('color', color)));
   },
 
-  /** Commit positions after a drag. Ids may be notes or sections. Last write wins (MP-3). */
+  /** Commit positions after a drag. Last write wins (MP-3). */
   moveItems(moves: { id: string; x: number; y: number }[]) {
     tx((d) => {
       const p = parts(d);
       for (const m of moves) {
+        if (m.id === PROBLEM_NODE_ID) {
+          p.meta.set('problemPosition', { x: Math.round(m.x), y: Math.round(m.y) });
+          continue;
+        }
         const n = p.notes.get(m.id);
         const s = p.sections.get(m.id);
         const target = n ?? s;
@@ -497,15 +502,39 @@ export const board = {
     const ids: string[] = [];
     undo.stopCapturing();
     tx((d) => {
-      const locked = new Set(inForce(readDecisions(d)).flatMap((x) => x.sourceNoteIds));
-      for (const id of noteIds) {
+      const decisions = readDecisions(d);
+      const locked = new Set(inForce(decisions).flatMap((x) => x.sourceNoteIds));
+      for (const id of new Set(noteIds)) {
         const text = parts(d).notes.get(id)?.get('text')?.toString().trim();
         if (!text || locked.has(id)) continue;
-        ids.push(writeDecision(d, { text: text.slice(0, 300), scope: 'board', sourceNoteIds: [id] }, me()).id);
+        const statement = text.slice(0, 300);
+        const previous = decisions.find((decision) =>
+          decision.status === 'reopened' && decision.scope === 'board' && decision.text === statement
+          && decision.sourceNoteIds.length === 1 && decision.sourceNoteIds[0] === id
+          && !decision.reasons && !decision.reportIds.length && decision.via === 'person',
+        );
+        if (previous) {
+          relockDecisionIn(d, previous.id, me());
+          ids.push(previous.id);
+        } else {
+          ids.push(writeDecision(d, { text: statement, scope: 'board', sourceNoteIds: [id] }, me()).id);
+        }
       }
     });
     undo.stopCapturing();
     return ids;
+  },
+
+  unlockNotes(noteIds: string[]) {
+    if (!undo) return;
+    const selected = new Set(noteIds);
+    undo.stopCapturing();
+    tx((d) => {
+      for (const decision of inForce(readDecisions(d))) {
+        if (decision.sourceNoteIds.some((id) => selected.has(id))) reopenDecisionIn(d, decision.id, me());
+      }
+    });
+    undo.stopCapturing();
   },
 
   /** Unlock: the decision stays on the board as Reopened, with who and when. */

@@ -6,18 +6,17 @@
 /*
   Design tokens. One place for colour, type, radius and motion.
   Contrast, measured (WCAG 2.x). Lowest pairing for each text token:
-    ink 15.8:1 on bg; ink-2 6.5:1 on surface-2; ink-3 4.6:1 on surface-2 (4.9 on bg, 5.4 on white);
-    accent 5.4:1 on bg; white on accent 5.9:1; ai 7.3:1 on ai-bg;
-    draft 6.4:1 on draft-bg; approved 5.7:1 on approved-bg; danger 6.1:1 on bg.
+    white on accent 5.9:1; ai 7.3:1 on ai-bg;
+    draft 6.4:1 on draft-bg; approved 5.7:1 on approved-bg.
   Never put ink-3 on anything darker than surface-2.
   8 px grid: Tailwind spacing 1 = 4px, so use even steps (2, 4, 6, 8...).
 */
 @theme {
   --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
 
-  --color-bg: #f6f5f1;
+  --color-bg: #ffffff;
   --color-surface: #ffffff;
-  --color-surface-2: #efede7;
+  --color-surface-2: #f3f3f3;
   --color-line: #dedbd3;
   --color-line-strong: #c9c5bb;
   --color-ink: #1c1b19;
@@ -27,7 +26,7 @@
   --color-accent: #2f5bd3;
   --color-accent-hover: #2850bd;
   --color-accent-soft: #e8eefc;
-  /* Selected notes and sections: one step lighter than accent, same hue. 3.7:1 on bg, 4.1:1 on white, 3.3:1 on a yellow note. */
+  /* Selected notes and sections: one step lighter than accent, same hue. 4.1:1 on white, 3.3:1 on a yellow note. */
   --color-selection: #4a78ea;
 
   /* AI-written text is always on this tint, with an "AI" label. */
@@ -148,7 +147,7 @@ body {
 .key-ai { box-shadow: var(--key-ai); }
 .key-tint { box-shadow: var(--key-tint); }
 .key-dark { box-shadow: var(--key-dark); }
-@media (hover: hover) {
+@media (hover: hover) and (pointer: fine) {
   .key-quiet:hover:not(:disabled, [data-disabled], [data-pressed]) { box-shadow: var(--key); }
   .key-quiet.key-dark-quiet:hover { box-shadow: var(--key-dark); }
 }
@@ -156,7 +155,7 @@ body {
 /* Pushed down: while held, and while the button's own pop-up is open. */
 .key:is(:active, [data-popup-open]):not(:disabled, [data-disabled]),
 .key-quiet:is(:active, [data-popup-open]):not(:disabled, [data-disabled]),
-.key-latch[aria-expanded='true'] {
+.key-latch:is([aria-expanded='true'], [aria-current='page']) {
   box-shadow: var(--key-down);
 }
 .key:active:not(:disabled, [data-disabled]),
@@ -188,6 +187,9 @@ body {
 /* Screen enter: short, only on route change (rare, so it may animate). */
 .screen-enter {
   animation: screen-in 260ms var(--ease-out) both;
+}
+html[data-keys] .screen-enter {
+  animation: none;
 }
 @keyframes screen-in {
   from {
@@ -331,8 +333,27 @@ body {
   background: #fff;
 }
 
+/* Match the section selection on the auto-height Problem card. */
+.problem-card-selection {
+  --selection-stroke: calc(2px / var(--rf-zoom, 1));
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  outline: var(--selection-stroke) solid var(--color-selection);
+  outline-offset: calc(-1px / var(--rf-zoom, 1));
+}
+.problem-card-selection > span {
+  position: absolute;
+  width: calc(12px / var(--rf-zoom, 1));
+  height: calc(12px / var(--rf-zoom, 1));
+  translate: -50% -50%;
+  border: var(--selection-stroke) solid var(--color-selection);
+  border-radius: calc(3px / var(--rf-zoom, 1));
+  background: #fff;
+}
+
 /* React Flow nodes are focusable wrappers: give them our ring, not theirs. */
-html[data-keys] .react-flow__node:focus-visible {
+html[data-keys] .react-flow__node:focus-visible:not(.react-flow__node-problem.selected) {
   outline: 2px solid var(--color-accent);
   outline-offset: 4px;
   border-radius: 4px;
@@ -345,7 +366,7 @@ html[data-keys] .react-flow__node:focus-visible {
 .sticky-note {
   position: relative;
   width: 200px;
-  height: 200px;
+  min-height: 200px;
   transform: rotate(var(--tilt, 0deg));
   transition: transform 220ms var(--ease-out);
   isolation: isolate;
@@ -366,7 +387,7 @@ html[data-keys] .react-flow__node:focus-visible {
 .paper {
   position: relative;
   display: flex;
-  height: 100%;
+  min-height: inherit;
   flex-direction: column;
   justify-content: space-between;
   gap: 12px;
@@ -384,6 +405,12 @@ html[data-keys] .react-flow__node:focus-visible {
     0 3px 6px -2px rgb(28 27 25 / 0.12);
   /* Forced-colours mode drops shadows: keep an edge. */
   border: 1px solid transparent;
+}
+.sticky-copy {
+  font-size: 15px;
+  line-height: 1.375;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .paper::before {
   /* The adhesive strip: a slightly denser band along the top. */
@@ -416,7 +443,7 @@ html[data-keys] .react-flow__node:focus-visible {
   outline: 2px solid var(--color-selection);
   outline-offset: 3px;
 }
-@media (hover: hover) {
+@media (hover: hover) and (pointer: fine) {
   .react-flow__node:not(.dragging) .sticky-note:hover {
     transform: rotate(var(--tilt, 0deg)) translateY(-1px);
   }
@@ -429,6 +456,49 @@ html[data-keys] .react-flow__node:focus-visible {
 .swatch[data-color='pink'] { --paper: var(--color-paper-pink); }
 .swatch[data-color='blue'] { --paper: var(--color-paper-blue); }
 .swatch[data-color='green'] { --paper: var(--color-paper-green); }
+
+/* A small glimpse of the canvas selection above the Agent's scope label. */
+.agent-note-preview {
+  position: relative;
+  height: 126px;
+  overflow: hidden;
+  background: var(--color-surface);
+}
+.agent-note-preview > span {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  top: 28px;
+  left: 50%;
+  width: clamp(68px, 42%, 112px);
+  aspect-ratio: 1;
+  translate: -50% 0;
+  color: rgb(0 0 0 / 0.4);
+  font-size: 18px;
+  font-weight: 650;
+  line-height: 1.15;
+  white-space: nowrap;
+  border-radius: 2px 2px 15px 2px / 2px 2px 4px 2px;
+  background: linear-gradient(to bottom, color-mix(in oklab, var(--paper), #000 5%) 12px, var(--paper) 12px);
+  box-shadow: var(--shadow-card);
+}
+.agent-note-preview > span:first-child {
+  transform: translateX(-62%) rotate(-5deg);
+}
+.agent-note-preview > span:nth-child(2) {
+  top: 21px;
+  transform: translateX(62%) rotate(5deg);
+}
+.agent-note-preview > span:is(:only-child, :nth-child(3)) {
+  top: 8px;
+  transform: rotate(-2deg);
+}
+.agent-note-preview::after {
+  content: '';
+  position: absolute;
+  inset: 80px 0 0;
+  background: linear-gradient(to bottom, transparent, var(--color-surface));
+}
 
 /* Accordion panels: Base UI measures the height for us. */
 .accordion-panel {
@@ -447,22 +517,31 @@ html[data-keys] .react-flow__node:focus-visible {
   transform: rotate(90deg);
 }
 
-/* Report that just landed on the board: one soft pulse of the border. */
+/* Report that just landed on the board: a brief arrival, without animating a painted shadow. */
 .just-landed {
-  animation: landed 1600ms var(--ease-out) backwards;
+  animation: landed 240ms var(--ease-out) both;
 }
 @keyframes landed {
-  0% {
-    box-shadow: 0 0 0 0 rgb(30 107 58 / 0.35);
+  from {
     transform: translateY(-4px);
     opacity: 0;
   }
-  20% {
-    transform: translateY(0);
-    opacity: 1;
+}
+
+/* A rare asynchronous result can arrive as a small sequence. The steps never reanimate on a tick. */
+@media (prefers-reduced-motion: no-preference) {
+  .plan-ready > * {
+    animation: plan-step-in 220ms var(--ease-out) backwards;
   }
-  100% {
-    box-shadow: 0 0 0 8px rgb(30 107 58 / 0);
+  .plan-ready > :nth-child(2) { animation-delay: 35ms; }
+  .plan-ready > :nth-child(3) { animation-delay: 70ms; }
+  .plan-ready > :nth-child(4) { animation-delay: 105ms; }
+  .plan-ready > :nth-child(n + 5) { animation-delay: 140ms; }
+}
+@keyframes plan-step-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
   }
 }
 
@@ -488,6 +567,9 @@ html[data-keys] .react-flow__node:focus-visible {
   }
   .just-landed {
     animation: fade 200ms ease both;
+  }
+  .plan-ready > * {
+    animation: fade 160ms ease both;
   }
   .screen-enter,
   .msg-enter {
@@ -515,6 +597,77 @@ html[data-keys] .react-flow__node:focus-visible {
     opacity: 0;
   }
 }
+
+/* Match the dock and expanded chat in the same transition. The live board only lays out once. */
+:root[data-sidebar-transition] :is(.sidebar-panel, .agent-expanded-panel) {
+  view-transition-name: sidebar-panel;
+}
+:root[data-sidebar-transition] .dock-panel-content {
+  transition: none;
+}
+
+::view-transition-group(root),
+::view-transition-group(sidebar-panel) {
+  animation-duration: 240ms;
+  animation-timing-function: var(--ease-out);
+}
+
+::view-transition-image-pair(sidebar-panel) {
+  overflow: clip;
+}
+::view-transition-old(sidebar-panel),
+::view-transition-new(sidebar-panel) {
+  height: 100%;
+  object-fit: none;
+  object-position: left top;
+}
+::view-transition-new(sidebar-panel):only-child {
+  animation: sidebar-reveal 240ms var(--ease-out) both;
+}
+::view-transition-old(sidebar-panel):only-child {
+  animation: sidebar-reveal 200ms var(--ease-out) both reverse;
+}
+@keyframes sidebar-reveal {
+  from { clip-path: inset(0 100% 0 0); }
+  to { clip-path: inset(0); }
+}
+
+/* A short entrance also covers programmatic opens and browsers without view transitions. */
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-keys], [data-sidebar-transition]) :is(.sidebar-panel:not([hidden]), .sidebar-handoff > .agent-expanded-panel) {
+    transition: opacity 220ms var(--ease-out), translate 220ms var(--ease-out);
+    @starting-style {
+      opacity: 0;
+      translate: -8px 0;
+    }
+  }
+}
+
+/* Dock contents change without moving the canvas or resizing the panel. */
+.dock-panel-content {
+  opacity: 1;
+  transform: translateX(0);
+  transition:
+    opacity 140ms var(--ease-out),
+    transform 140ms var(--ease-out);
+  @starting-style {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+}
+html[data-keys] .dock-panel-content {
+  transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dock-panel-content {
+    transform: none;
+    transition: opacity 120ms ease;
+    @starting-style {
+      opacity: 0;
+      transform: none;
+    }
+  }
+}
 @media (prefers-reduced-motion: no-preference) {
   .dock-pop {
     transition:
@@ -533,7 +686,7 @@ html[data-keys] .react-flow__node:focus-visible {
   detail survives (finger gaps, the section tab, text lines). icon-bold: a single wire like the
   paperclip cannot be filled, so it gets a heavier stroke instead.
 */
-:is([data-pressed], [aria-expanded='true']) > :is(.icon-fill, .icon-cut) {
+:is([data-pressed], [aria-expanded='true'], [aria-current='page']) > :is(.icon-fill, .icon-cut) {
   fill: currentColor;
 }
 :is([data-pressed], [aria-expanded='true']) > .icon-cut {

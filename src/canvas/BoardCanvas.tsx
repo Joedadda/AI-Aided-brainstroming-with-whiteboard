@@ -1,4 +1,4 @@
-import { Minus, Plus, Sparkles, X } from 'lucide-react';
+import { LockKeyholeOpen, Minus, Plus, Sparkles, X } from 'lucide-react';
 import { coverOf } from '../../shared/decision-schema.ts';
 import {
   Background,
@@ -19,11 +19,12 @@ import {
   type OnNodeDrag,
 } from '@xyflow/react';
 import '@xyflow/react/dist/base.css';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { StickyColor } from '../../shared/types.ts';
-import { STICKY, membersOf } from '../../shared/ydoc.ts';
-import { api } from '../lib/api.ts';
+import { PROBLEM_CARD_WIDTH, PROBLEM_NODE_ID, STICKY, membersOf } from '../../shared/ydoc.ts';
 import { board, setCursor, setSelectionPresence } from '../lib/board.ts';
+import { placeChatIdea } from '../lib/conversation.ts';
 import { noteColorOf, useProfile } from '../lib/profile.ts';
 
 import { useStore } from '../store.ts';
@@ -34,25 +35,16 @@ import { Sidebar } from './Dock.tsx';
 import { LockGlyph, shorten } from './LockPanel.tsx';
 import { NoteColorPicker } from './ColorPicker.tsx';
 import { nodeTypes, takeNotes } from './nodes.tsx';
-import { ProblemField } from './ProblemField.tsx';
 import { Toolbar, type Tool } from './Toolbar.tsx';
 import { MeetingSheet } from '../screens/MeetingSheet.tsx';
 import { openSheet } from '../lib/meeting.ts';
-import { openAgent } from '../lib/agent.ts';
+import { useCanvasLaunchBusy } from '../lib/private-canvas.ts';
 
 
 const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 4;
-/** Keeps fitted content clear of the toolbar (bottom); the top follows the Problem card when it is shown. */
+/** Keep fitted content clear of the board controls. */
 const FIT_PADDING = { top: '40px', bottom: '110px', left: '40px', right: '40px' } as const;
-
-/** Fit below the Problem card, whose height depends on how long the problem is. It can be hidden. */
-function fitPadding(wrap: HTMLElement | null) {
-  const panel = document.getElementById('frame-panel');
-  if (!wrap || !panel || !useStore.getState().problemPinned) return FIT_PADDING;
-  const top = Math.round(panel.getBoundingClientRect().bottom - wrap.getBoundingClientRect().top + 24);
-  return { ...FIT_PADDING, top: `${Math.max(40, top)}px` as const };
-}
 
 export function BoardCanvas({ boardId }: { boardId: string }) {
   return (
@@ -63,6 +55,7 @@ export function BoardCanvas({ boardId }: { boardId: string }) {
 }
 
 function CanvasInner({ boardId }: { boardId: string }) {
+  const canvasLaunchBusy = useCanvasLaunchBusy();
   const cards = useStore((s) => s.cards);
   const sections = useStore((s) => s.sections);
   const reports = useStore((s) => s.reports);
@@ -75,7 +68,7 @@ function CanvasInner({ boardId }: { boardId: string }) {
   const lockToast = useStore((s) => s.lockToast);
   const decisionCount = useStore((s) => s.decisions.length);
   const meetingToast = useStore((s) => s.meetingToast);
-  const problemPinned = useStore((s) => s.problemPinned);
+  const problemPosition = useStore((s) => s.problemPosition);
   const me = useProfile((s) => s.profile!.userId);
 
   const flow = useReactFlow();
@@ -90,6 +83,16 @@ function CanvasInner({ boardId }: { boardId: string }) {
 
   // ---- Build nodes from the shared document; keep React Flow's own selection and measurements. ----
   const built = useMemo<Node[]>(() => {
+    const problemNodes: Node[] = synced && problemPosition ? [{
+      id: PROBLEM_NODE_ID,
+      type: 'problem',
+      position: problemPosition,
+      width: PROBLEM_CARD_WIDTH,
+      zIndex: 15,
+      deletable: false,
+      data: {},
+      ariaLabel: 'Problem card',
+    }] : [];
     const sectionNodes: Node[] = sections.map((s) => ({
       id: s.id,
       type: 'section',
@@ -112,10 +115,10 @@ function CanvasInner({ boardId }: { boardId: string }) {
         type: 'sticky',
         position: { x: c.x, y: c.y },
         width: c.w,
-        height: c.h,
+        initialHeight: c.h,
         zIndex: 10,
         data: { card: c },
-        ariaLabel: `${c.origin === 'ai' ? 'AI note placed by' : 'Note from'} ${c.author}: ${c.text || 'empty'}${reserved}`,
+        ariaLabel: `Note from ${c.origin === 'ai' ? 'AI' : c.author}: ${c.text || 'empty'}${reserved}`,
       };
     });
     // Case boards show the Reports and Decision slots from the start (spec section 8).
@@ -138,8 +141,8 @@ function CanvasInner({ boardId }: { boardId: string }) {
           },
         ]
       : [];
-    return [...sectionNodes, ...stickyNodes, ...fixed];
-  }, [cards, sections, reports.length, decisionCount, kind, right, me]);
+    return [...problemNodes, ...sectionNodes, ...stickyNodes, ...fixed];
+  }, [synced, problemPosition, cards, sections, reports.length, decisionCount, kind, right, me]);
 
   const [nodes, setNodes] = useState<Node[]>(built);
   const nodesRef = useRef(nodes);
@@ -173,6 +176,12 @@ function CanvasInner({ boardId }: { boardId: string }) {
     }
     if (!keep.length) return;
     setNodes((ns) => new NodeChangeset(keep).applyTo(ns));
+    // Arrow-key movement emits a position change without a drag-stop event.
+    for (const change of keep) {
+      if (change.type === 'position' && change.id === PROBLEM_NODE_ID && change.position && !change.dragging && !dragging.current) {
+        board.moveItems([{ id: change.id, ...change.position }]);
+      }
+    }
   }, []);
 
   // ---- Dragging a section carries the notes inside it. ----
@@ -268,11 +277,11 @@ function CanvasInner({ boardId }: { boardId: string }) {
         return;
       }
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      // Enter on a focused note edits it (the keyboard twin of clicking the note).
-      const note = k === 'enter' ? t.closest<HTMLElement>('.react-flow__node-sticky') : null;
-      if (note?.dataset.id) {
+      // Enter edits a focused card, like clicking it without dragging.
+      const card = k === 'enter' && !t.closest('button') ? t.closest<HTMLElement>('.react-flow__node-sticky, .react-flow__node-problem') : null;
+      if (card?.dataset.id) {
         e.preventDefault();
-        useStore.setState({ editingId: note.dataset.id });
+        useStore.setState({ editingId: card.dataset.id });
         return;
       }
       if (k === 'v') setTool('select');
@@ -293,24 +302,38 @@ function CanvasInner({ boardId }: { boardId: string }) {
   // ---- Presence: my selection is visible to others (WB-10). ----
   useEffect(() => setSelectionPresence(selected), [selected]);
 
-  // ---- WB-9: the first open frames the existing content, or centres an empty canvas. ----
+  /** Frame given nodes. When the problem is the starting point, keep its text readable. */
+  const frameNodes = useCallback(
+    (ids: string[], duration = 500, preferProblem = false) => {
+      const el = wrapRef.current;
+      if (!el) return;
+      const known = ids.filter((id) => flow.getNode(id));
+      if (!known.length) return;
+      const bounds = flow.getNodesBounds(known);
+      const fit = getViewportForBounds(bounds, el.clientWidth, el.clientHeight, MIN_ZOOM, 1, FIT_PADDING);
+      const problem = preferProblem && fit.zoom < 0.8 ? flow.getNode(PROBLEM_NODE_ID) : undefined;
+      if (!problem) {
+        void flow.setViewport(fit, { duration });
+        return;
+      }
+      // Anchor to the card's top edge, so a long problem can be read by panning down.
+      const zoom = Math.max(MIN_ZOOM, Math.min(1, (el.clientWidth - 80) / PROBLEM_CARD_WIDTH));
+      void flow.setViewport({ x: 40 - problem.position.x * zoom, y: 40 - problem.position.y * zoom, zoom }, { duration });
+    },
+    [flow],
+  );
+
+  // ---- WB-9: frame the board, or start at the Problem card if the overview would make it too small. ----
   const reveal = useStore((s) => s.reveal);
   const nodesReady = useNodesInitialized();
   const framed = useRef(false);
   useEffect(() => {
-    if (!synced || framed.current) return;
-    if (cards.length + sections.length > 0 && !nodesReady) return;
+    if (!synced || !nodesReady || !flow.getNode(PROBLEM_NODE_ID) || framed.current) return;
     framed.current = true;
     if (reveal?.length) return; // the reveal effect frames instead
-    const el = wrapRef.current;
-    if (!cards.length && !sections.length) {
-      if (el) flow.setViewport({ x: el.clientWidth / 2 - 180, y: el.clientHeight / 2, zoom: 1 });
-      return;
-    }
     // The decision card is tall; leaving it out keeps the notes readable. It sits just to the right, and Fit shows everything.
-    requestAnimationFrame(() => frameNodes(nodesRef.current.filter((n) => n.id !== 'decision').map((n) => n.id), 0));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [synced, nodesReady, cards.length, sections.length, flow, reveal]);
+    requestAnimationFrame(() => frameNodes(nodesRef.current.filter((n) => n.id !== 'decision').map((n) => n.id), 0, true));
+  }, [synced, nodesReady, flow, reveal, frameNodes]);
 
   // ---- When a report lands, bring it into view. ----
   const landedFramed = useRef<string | undefined>(undefined);
@@ -322,19 +345,6 @@ function CanvasInner({ boardId }: { boardId: string }) {
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [justLanded, nodesReady]);
-
-  /** Frame given nodes by computing the view from their bounds (fitView with a node list did not move on a fresh mount). */
-  const frameNodes = useCallback(
-    (ids: string[], duration = 500) => {
-      const el = wrapRef.current;
-      if (!el) return;
-      const known = ids.filter((id) => flow.getNode(id));
-      if (!known.length) return;
-      const bounds = flow.getNodesBounds(known);
-      flow.setViewport(getViewportForBounds(bounds, el.clientWidth, el.clientHeight, MIN_ZOOM, 1, fitPadding(el)), { duration });
-    },
-    [flow],
-  );
 
   // ---- Coming from a report's "Notes used": select those notes and bring them into view. ----
   useEffect(() => {
@@ -412,14 +422,16 @@ function CanvasInner({ boardId }: { boardId: string }) {
   const selectedStickies = selected.filter((id) => cards.some((c) => c.id === id));
   const vp = useViewport();
   const selTop = Math.min(...cards.filter((c) => selectedStickies.includes(c.id)).map((c) => c.y));
-  const barBelow = Number.isFinite(selTop) && selTop * vp.zoom + vp.y < 260;
+  const barBelow = Number.isFinite(selTop) && selTop * vp.zoom + vp.y < 84;
   const takeable = cards.filter((c) => selectedStickies.includes(c.id) && c.text.trim());
   const decisions = useStore((s) => s.decisions);
   const lockedNoteIds = useMemo(() => new Set(decisions.filter((d) => d.status === 'locked').flatMap((d) => d.sourceNoteIds)), [decisions]);
+  const unlockedSelection = takeable.filter((c) => !lockedNoteIds.has(c.id));
+  const unlockSelection = takeable.length > 0 && unlockedSelection.length === 0;
 
   return (
     <div className="flex min-h-0 flex-1">
-    <Sidebar boardId={boardId} onPlace={(s) => placeSuggestion(s, viewCentre())} />
+    <Sidebar boardId={boardId} onPlace={(s) => placeSuggestion(s, viewCentre())} onShowProblem={() => frameNodes([PROBLEM_NODE_ID], 260, true)} />
     <div
       ref={wrapRef}
       className="relative min-h-0 min-w-0 flex-1"
@@ -440,14 +452,9 @@ function CanvasInner({ boardId }: { boardId: string }) {
         }
       }}
       onDrop={onDrop}
-      onDoubleClick={(e) => {
-        // WB-1: double-click empty canvas to place a note there.
-        if (tool !== 'select' || !(e.target as Element).classList.contains('react-flow__pane')) return;
-        addAt('sticky', flow.screenToFlowPosition({ x: e.clientX, y: e.clientY }));
-      }}
     >
       <ReactFlow
-        // Section selection handles keep a constant on-screen size (styles.css reads --rf-zoom).
+        // Selection outlines and handles keep a constant on-screen size.
         onMove={(_, vp) => wrapRef.current?.style.setProperty('--rf-zoom', String(vp.zoom))}
         nodes={nodes}
         nodeTypes={nodeTypes}
@@ -468,11 +475,12 @@ function CanvasInner({ boardId }: { boardId: string }) {
           if (ids.length !== cur.length || ids.some((id, i) => id !== cur[i])) useStore.setState({ selected: ids });
         }}
         onNodeClick={(e, node) => {
-          // One click on a note starts editing (a drag does not count as a click). Shift-click
-          // still only adds to the selection, and the note's own buttons keep their job.
-          if (node.type !== 'sticky' || tool !== 'select' || e.shiftKey || e.metaKey || e.ctrlKey) return;
+          if (tool !== 'select' || e.shiftKey || e.metaKey || e.ctrlKey) return;
           if ((e.target as Element).closest('button, a, input, textarea, [role="dialog"]')) return;
-          useStore.setState({ editingId: node.id });
+          // The callback receives the node before this click's selection update is applied.
+          if (node.type === 'sticky' || (node.type === 'problem' && node.selected)) {
+            useStore.setState({ editingId: node.id });
+          }
         }}
         onPaneClick={(e) => {
           if (tool === 'sticky' || tool === 'section') placeAt(e.clientX, e.clientY);
@@ -502,7 +510,7 @@ function CanvasInner({ boardId }: { boardId: string }) {
         <Cursors />
 
         {/* Selection bar: appears above the selected notes. */}
-        {/* Flips below the selection when the notes sit under the top panels, so it is never covered. */}
+        {/* Flip below the selection when too close to the top edge. */}
         <NodeToolbar nodeId={selectedStickies} isVisible={selectedStickies.length > 0} offset={16} position={barBelow ? Position.Bottom : Position.Top}>
           <div className="flex items-center gap-2 rounded-[15px] border border-line bg-surface p-1.5 pl-3 shadow-raised">
             <span className="text-[13px] text-ink-2 tabular-nums">
@@ -515,48 +523,30 @@ function CanvasInner({ boardId }: { boardId: string }) {
             />
             <span className="mx-1 h-5 w-px bg-line" aria-hidden />
             {/* One AI button (user request, 25 Nov): ask about these notes, or hand them to the agent. */}
-            <AskAI noteIds={takeable.map((c) => c.id)} onAgent={openAgent} />
-            {/* One-click lock (user request, 25 Nov): each note becomes a decision in its own words. */}
-            {(() => {
-              const unlocked = takeable.filter((c) => !lockedNoteIds.has(c.id));
-              if (takeable.length > 0 && unlocked.length === 0) {
-                return (
-                  <Button size="sm" disabled title="Every selected note is already locked">
-                    <LockGlyph className="size-4" />
-                    Locked
-                  </Button>
-                );
-              }
-              return (
-                <Button
-                  size="sm"
-                  disabled={unlocked.length === 0}
-                  title="Lock these notes as decisions"
-                  onClick={() => {
-                    const ids = board.lockNotes(unlocked.map((c) => c.id));
-                    if (!ids.length) return;
-                    useStore.setState({ lockToast: { id: ids[0], text: ids.length === 1 ? unlocked[0].text : `${ids.length} notes` } });
-                  }}
-                >
-                  <LockGlyph className="size-4" />
-                  Lock
-                </Button>
-              );
-            })()}
-            <Button variant="primary" size="sm" disabled={takeable.length === 0} onClick={() => void takeNotes(takeable.map((c) => c.id))}>
-              {/* User, 25 Nov: "Explore privately" with the AI sparkles (was "Take N cards with you"). */}
-              <Sparkles aria-hidden className="size-4" strokeWidth={1.75} />
+            <AskAI boardId={boardId} noteIds={takeable.map((c) => c.id)} />
+            <Button
+              size="sm"
+              disabled={takeable.length === 0}
+              title={unlockSelection ? 'Reopen decisions linked to these notes' : 'Lock selected notes that are still unlocked'}
+              onClick={() => {
+                if (unlockSelection) {
+                  board.unlockNotes(takeable.map((c) => c.id));
+                  useStore.setState({ lockToast: undefined });
+                  return;
+                }
+                const ids = board.lockNotes(unlockedSelection.map((c) => c.id));
+                if (!ids.length) return;
+                useStore.setState({ lockToast: { id: ids[0], text: ids.length === 1 ? unlockedSelection[0].text : `${ids.length} notes` } });
+              }}
+            >
+              {unlockSelection ? <LockKeyholeOpen aria-hidden className="size-4" /> : <LockGlyph className="size-4" />}
+              {unlockSelection ? 'Unlock' : 'Lock'}
+            </Button>
+            <Button variant="primary" size="sm" disabled={takeable.length === 0 || canvasLaunchBusy} onClick={() => void takeNotes(takeable.map((c) => c.id))}>
               Explore privately
             </Button>
           </div>
         </NodeToolbar>
-
-        {/* Frame (WB-7): the problem can float in screen space above the canvas. The eye in the sidebar shows or hides it. */}
-        {problemPinned && (
-          <Panel position="top-left" id="frame-panel" className="!m-4 flex w-[min(560px,40vw)] flex-col gap-3">
-            <ProblemField />
-          </Panel>
-        )}
 
         <Panel position="bottom-center" className="!mb-5">
           <Toolbar tool={tool} onChange={setTool} />
@@ -570,7 +560,7 @@ function CanvasInner({ boardId }: { boardId: string }) {
         </Panel>
 
         <Panel position="bottom-right" className="!m-5">
-          <ZoomControls onFit={() => flow.fitView({ duration: 300, padding: fitPadding(wrapRef.current), maxZoom: 1 })} />
+          <ZoomControls onFit={() => flow.fitView({ duration: 300, padding: FIT_PADDING, maxZoom: 1 })} />
         </Panel>
 
         {!synced && (
@@ -580,55 +570,60 @@ function CanvasInner({ boardId }: { boardId: string }) {
             </p>
           </Panel>
         )}
-        {synced && cards.length === 0 && sections.length === 0 && (
-          <Panel position="top-center" className="pointer-events-none !mt-[30vh]">
-            <p className="max-w-[360px] text-center text-[14px] leading-relaxed text-ink-3">
-              Double-click anywhere to add a sticky note, or press S. Add a link or some text under Context (the paperclip in the sidebar) so the AI knows the background.
-            </p>
-          </Panel>
-        )}
 
-        {(deletedLabel || titleToast || meetingToast || lockToast) && (
-          // Above the toolbar row (56 px bar + 20 px margin), so a wide toast never runs under it.
-          <Panel position="bottom-left" className="!mb-[88px] !ml-5 flex flex-col items-start gap-2">
-            {titleToast && <TitleToast title={titleToast} />}
-            {lockToast && <LockToast key={lockToast.id} id={lockToast.id} text={lockToast.text} notice={lockToast.notice} />}
+        {/* Above the toolbar row (56 px bar + 20 px margin), so a wide toast never runs under it. */}
+        <Panel position="bottom-left" className="pointer-events-none !mb-[88px] !ml-5 flex flex-col items-start gap-2">
+          <AnimatePresence initial={false}>
+            {titleToast && (
+              <ToastMotion key={`title-${titleToast}`}>
+                <TitleToast title={titleToast} />
+              </ToastMotion>
+            )}
+            {lockToast && (
+              <ToastMotion key={`lock-${lockToast.id}`}>
+                <LockToast id={lockToast.id} text={lockToast.text} notice={lockToast.notice} />
+              </ToastMotion>
+            )}
             {meetingToast && (
-              // Meeting addendum 3.3: the draft finished while the Context panel was closed. No focus is taken.
-              <div role="status" className="flex items-center gap-3 rounded-[13px] border border-line bg-ink py-1.5 pr-1.5 pl-3 text-[13px] text-white shadow-raised">
-                <Sparkles aria-hidden size={16} strokeWidth={1.75} className="shrink-0 text-white/80" />
-                Your session draft is ready
-                <button type="button" onClick={() => openSheet(meetingToast.sourceId, meetingToast.chipId)} className="pressable key-dark h-7 rounded-[7px] bg-white/15 px-2.5 font-medium hover:bg-white/25">
-                  Review
-                </button>
-                <button
-                  type="button"
-                  aria-label="Dismiss"
-                  onClick={() => useStore.setState({ meetingToast: undefined })}
-                  className="pressable key-quiet key-dark-quiet flex size-7 items-center justify-center rounded-[7px] text-white/70 hover:text-white"
-                >
-                  <X aria-hidden size={14} strokeWidth={1.75} />
-                </button>
-              </div>
+              <ToastMotion key={`meeting-${meetingToast.sourceId}`}>
+                {/* Meeting addendum 3.3: the draft finished while the Context panel was closed. No focus is taken. */}
+                <div role="status" className="flex items-center gap-3 rounded-[13px] border border-line bg-ink py-1.5 pr-1.5 pl-3 text-[13px] text-white shadow-raised">
+                  <Sparkles aria-hidden size={16} strokeWidth={1.75} className="shrink-0 text-white/80" />
+                  Your session draft is ready
+                  <button type="button" onClick={() => openSheet(meetingToast.sourceId, meetingToast.chipId)} className="pressable key-dark h-7 rounded-[7px] bg-white/15 px-2.5 font-medium hover:bg-white/25">
+                    Review
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Dismiss"
+                    onClick={() => useStore.setState({ meetingToast: undefined })}
+                    className="pressable key-quiet key-dark-quiet flex size-7 items-center justify-center rounded-[7px] text-white/70 hover:text-white"
+                  >
+                    <X aria-hidden size={14} strokeWidth={1.75} />
+                  </button>
+                </div>
+              </ToastMotion>
             )}
             {deletedLabel && (
-            <div role="status" className="flex items-center gap-3 rounded-[13px] border border-line bg-ink py-1.5 pr-1.5 pl-4 text-[13px] text-white shadow-raised">
-              Deleted {deletedLabel}.
-              <button type="button" onClick={() => board.undo()} className="pressable key-dark h-7 rounded-[7px] bg-white/15 px-2.5 font-medium hover:bg-white/25">
-                Undo
-              </button>
-              <button
-                type="button"
-                aria-label="Dismiss"
-                onClick={() => useStore.setState({ deletedLabel: undefined })}
-                className="pressable key-quiet key-dark-quiet flex size-7 items-center justify-center rounded-[7px] text-white/70 hover:text-white"
-              >
-                <X aria-hidden size={14} strokeWidth={1.75} />
-              </button>
-            </div>
+              <ToastMotion key={`deleted-${deletedLabel}`}>
+                <div role="status" className="flex items-center gap-3 rounded-[13px] border border-line bg-ink py-1.5 pr-1.5 pl-4 text-[13px] text-white shadow-raised">
+                  Deleted {deletedLabel}.
+                  <button type="button" onClick={() => board.undo()} className="pressable key-dark h-7 rounded-[7px] bg-white/15 px-2.5 font-medium hover:bg-white/25">
+                    Undo
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Dismiss"
+                    onClick={() => useStore.setState({ deletedLabel: undefined })}
+                    className="pressable key-quiet key-dark-quiet flex size-7 items-center justify-center rounded-[7px] text-white/70 hover:text-white"
+                  >
+                    <X aria-hidden size={14} strokeWidth={1.75} />
+                  </button>
+                </div>
+              </ToastMotion>
             )}
-          </Panel>
-        )}
+          </AnimatePresence>
+        </Panel>
       </ReactFlow>
       <div
         ref={ghostRef}
@@ -665,6 +660,22 @@ function CanvasInner({ boardId }: { boardId: string }) {
  * away on the title itself.
  */
 const TITLE_TOAST_MS = 8000;
+function ToastMotion({ children }: { children: ReactNode }) {
+  const reduce = useReducedMotion();
+  const resting = reduce ? { opacity: 1 } : { opacity: 1, y: 0 };
+  return (
+    <motion.div
+      className="pointer-events-auto"
+      initial={reduce ? { opacity: 0 } : { opacity: 0, y: 12 }}
+      animate={resting}
+      exit={reduce ? { opacity: 0 } : { opacity: 0, y: 8 }}
+      transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
 function TitleToast({ title }: { title: string }) {
   const close = () => useStore.setState({ titleToast: undefined });
   const [held, setHeld] = useState(false);
@@ -767,10 +778,8 @@ function LockToast({ text, notice }: { id: string; text: string; notice?: string
 
 /** BP-3: a suggestion becomes a note marked AI, placed by (and attributed to) this person. */
 function placeSuggestion(s: { id: string; text: string }, at: { x: number; y: number }) {
-  board.addNote(at, { text: s.text, origin: 'ai' });
   const boardId = useStore.getState().boardId;
-  if (boardId) void api.markUsed(boardId, s.id).catch(() => {});
-  window.dispatchEvent(new CustomEvent('suggestion-used', { detail: s.id }));
+  if (boardId) placeChatIdea(boardId, s, at);
 }
 
 /** MP-9: other people's cursors, drawn in world space so they track while this person pans and zooms. */

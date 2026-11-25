@@ -1,62 +1,73 @@
-import { ArrowUp, ChevronRight, LoaderCircle, LockKeyhole, LockKeyholeOpen, TriangleAlert, WandSparkles, X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { ChevronRight, LoaderCircle, LockKeyhole, LockKeyholeOpen, TriangleAlert, WandSparkles, X } from 'lucide-react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { AGENT_LIMITS, type AgentIdea, type AgentPlan, type PlanStep } from '../../shared/agent-schema.ts';
+import type { Card, Exploration } from '../../shared/types.ts';
 import { countsLine, isOn, tickKey } from '../lib/agent-apply.ts';
-import { applyRun, cancelRun, discardRun, openAgent, resetAgent, setEdit, setTick, startRun, undoApplied, useAgent, type AgentRun } from '../lib/agent.ts';
-import { askIdeas, isIdeasAsk, loadIdeas, useIdeas } from '../lib/ideas.ts';
+import { applyRun, cancelRun, discardRun, openAgent, setEdit, setTick, startRun, undoApplied, useAgent, type AgentRun } from '../lib/agent.ts';
+import { api } from '../lib/api.ts';
+import { refreshSessions, usePrivateSessions } from '../lib/sessions.ts';
+import { useConversation } from '../lib/conversation.ts';
 import { useProfile } from '../lib/profile.ts';
+import { go } from '../lib/router.ts';
 import { useStore } from '../store.ts';
-import { Badge } from '../ui/Badge.tsx';
 import { Button } from '../ui/Button.tsx';
-import { Tooltip } from '../ui/Tooltip.tsx';
-import { AgentGiven } from './AgentSession.tsx';
-import { TypingHint } from './TypingHint.tsx';
+import { AgentChat, useAgentTranscript } from './AgentChat.tsx';
 import { cx } from '../ui/cx.ts';
 
-/*
-  The AI panel: the whiteboard agent (Whiteboard_Agent_PRD 3) and, since 25 Nov, the private idea
-  cards too (user request: one feature). Asking for ideas with nothing selected gives idea cards;
-  anything else goes to the agent. Lives in the left sidebar as the sparkle tab.
-  The person types an instruction, the agent returns a plan, the person ticks and applies it.
-  Nothing reaches the shared board before Apply plan.
-*/
-
 const STAGES = { reading: 'Reading the board…', planning: 'Planning…', checking: 'Checking the plan…' } as const;
-
-/** Suggestions typed into the empty box (they replace the quick-action tags). Tab uses the one shown. */
-const SUGGEST_NONE = ['Give me some ideas', 'Sort these into groups', 'Find duplicates', 'Check these against locked decisions'];
-const SUGGEST_SELECTED = ['Add more ideas like these', 'Sort these into groups', 'Find duplicates', 'Check these against locked decisions'];
-const SUGGEST_EMPTY_BOARD = ['Give me some ideas'];
 
 const first = (t: string, n = 48) => (t.length > n ? `${t.slice(0, n - 1).trim()}…` : t);
 const ofType = <T extends PlanStep['type']>(steps: PlanStep[], t: T) => steps.filter((s) => s.type === t) as Extract<PlanStep, { type: T }>[];
 
-export function AgentPanel({ boardId, ideas, full = false }: { boardId: string; ideas?: ReactNode; full?: boolean }) {
+function SelectedNotePreview({ notes }: { notes: Card[] }) {
+  const preview = notes.slice(0, 3);
+  return (
+    <div aria-hidden className="agent-note-preview" data-testid="selected-note-preview">
+      {preview.map((note, index) => (
+        <span key={note.id} className="swatch" data-color={note.color}>#idea{index + 1}</span>
+      ))}
+    </div>
+  );
+}
+
+export function AgentPanel({ boardId, onPlace }: { boardId: string; onPlace: (s: { id: string; text: string }) => void }) {
+  const workspace = useAgent((s) => s.workspace);
   const run = useAgent((s) => s.run);
-  const recent = useAgent((s) => s.recent);
   const focusTick = useAgent((s) => s.focusTick);
-  const clarified = useAgent((s) => s.clarified);
+  const openingCanvas = useAgent((s) => s.openingCanvas);
+  const activeCanvasId = useAgent((s) => s.activeCanvasId);
+  const latestCanvasId = usePrivateSessions(boardId).find((session) => session.kind === 'explore')?.id;
+  const conversationId = activeCanvasId ?? latestCanvasId;
+  const replying = useConversation((s) => s.pending?.workspace === workspace);
   const selected = useStore((s) => s.selected);
   const cards = useStore((s) => s.cards);
-  const [text, setText] = useState('');
-  const box = useRef<HTMLTextAreaElement>(null);
+  const synced = useStore((s) => s.synced);
+  const [ex, setEx] = useState<Exploration | null>(null);
+  const [loadError, setLoadError] = useState('');
+  const current = ex?.boardId === boardId && ex.id === activeCanvasId ? ex : null;
+  const currentRun = run?.boardId === boardId && run.explorationId === current?.id ? run : null;
+  const selectedNotes = useMemo(() => cards.filter((c) => selected.includes(c.id) && c.text.trim()).slice(0, AGENT_LIMITS.scopeNotes), [cards, selected]);
+  const selectedIds = useMemo(() => selectedNotes.map((note) => note.id), [selectedNotes]);
+  const transcript = useAgentTranscript(current, setEx, replying);
 
-  const selectedNotes = useMemo(() => cards.filter((c) => selected.includes(c.id) && c.text.trim()), [cards, selected]);
-  const withText = cards.filter((c) => c.text.trim()).length;
-
-  const ideasBusy = useIdeas((s) => s.busy);
-
-  // A new board: nothing carries over. This person's saved idea cards load for it.
-  useEffect(() => resetAgent, [boardId]);
-  useEffect(() => loadIdeas(boardId), [boardId]);
-
-  // Focus the box when asked (Ask agent, Ctrl+K, after a clarify question or a discard).
   useEffect(() => {
-    if (focusTick) window.setTimeout(() => box.current?.focus(), 30);
-  }, [focusTick]);
+    if (!conversationId || current) return;
+    let live = true;
+    setLoadError('');
+    void api.exploration(conversationId)
+      .then((result) => {
+        const active = useAgent.getState();
+        if (!live || active.workspace !== workspace || (active.activeCanvasId && active.activeCanvasId !== conversationId)) return;
+        if (result.boardId === boardId && result.status === 'open' && !result.readOnly) {
+          setEx(result);
+          useAgent.setState({ activeCanvasId: result.id });
+        } else setLoadError('This conversation is no longer open.');
+      })
+      .catch(() => { if (live) setLoadError('Could not load the conversation.'); });
+    return () => { live = false; };
+  }, [conversationId, boardId, current, workspace]);
 
-  // Cmd/Ctrl+K opens the panel and focuses the box (PRD 3.2).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
@@ -68,152 +79,61 @@ export function AgentPanel({ boardId, ideas, full = false }: { boardId: string; 
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const send = (value = text) => {
-    const v = value.trim();
-    if (!v || run?.status === 'running' || ideasBusy) return;
-    setText('');
-    // "Give me ideas" with nothing selected: the idea cards. Everything else: the agent.
-    if (isIdeasAsk(v, selectedNotes.length > 0) && !clarified) return void askIdeas(boardId, v);
-    void startRun(boardId, v);
+  const resolve = async () => {
+    const { explorationId } = await api.openExploration(boardId, [], [], undefined, activeCanvasId ?? undefined);
+    const result = await api.exploration(explorationId);
+    if (useAgent.getState().workspace !== workspace) throw new Error('The board changed.');
+    useAgent.setState({ activeCanvasId: result.id });
+    setEx(result);
+    setLoadError('');
+    void refreshSessions(boardId);
+    return result;
   };
 
-  const scopeLine =
-    selectedNotes.length > 0
-      ? `${selectedNotes.length} ${selectedNotes.length === 1 ? 'note' : 'notes'} you selected`
-      : withText > AGENT_LIMITS.scopeNotes
-        ? `${AGENT_LIMITS.scopeNotes} of ${withText} notes. Select notes to choose which.`
-        : 'the whole board';
-  const busy = run?.status === 'running' || ideasBusy;
-  const hinting = !text && !clarified;
-  const phrases = withText === 0 ? SUGGEST_EMPTY_BOARD : selectedNotes.length > 0 ? SUGGEST_SELECTED : SUGGEST_NONE;
-  const shownPhrase = useRef('');
-  const onPhrase = useCallback((p: string) => {
-    shownPhrase.current = p;
-  }, []);
-
   return (
-    // Full screen: a centred column, results above and the box held at the bottom, like a chat.
-    <div className={cx('flex flex-col gap-3 pt-1', full && 'mx-auto min-h-full w-full max-w-[720px]')}>
-      {full && <AgentGiven boardId={boardId} />}
-
-      <p className="flex flex-wrap items-center gap-1.5 text-[13px] text-ink-2">
-        Working on:
-        {selectedNotes.length > 0 ? (
-          <span className="inline-flex items-center gap-1 rounded-sm bg-accent-soft py-0.5 pr-0.5 pl-1.5 text-[12px] font-medium text-accent">
-            {scopeLine}
-            <button
-              type="button"
-              aria-label="Clear the selection"
-              onClick={() => useStore.setState({ selected: [] })}
-              className="pressable key-quiet flex size-5 items-center justify-center rounded-[5px] hover:bg-surface"
-            >
-              <X aria-hidden size={12} strokeWidth={2} />
-            </button>
-          </span>
-        ) : (
-          <span className="font-medium text-ink">{scopeLine}</span>
-        )}
-      </p>
-
-      {clarified && (
-        <p className="rounded-md border border-ai-line bg-ai-bg px-3 py-2 text-[13px] leading-relaxed text-ink">
-          <span className="font-semibold text-ai">The agent asks: </span>
-          {clarified.question}
-        </p>
-      )}
-
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          send();
+    <>
+      <AgentChat
+        compact
+        boardId={boardId}
+        ex={current}
+        setEx={setEx}
+        resolve={resolve}
+        scopeNoteIds={selectedIds}
+        onPlace={onPlace}
+        onRequestReport={() => {
+          if (current) go({ name: 'canvas', boardId, explorationId: current.id, reviewReport: true });
         }}
-        className={cx('relative', full && 'sticky bottom-0 order-last mt-auto bg-surface after:absolute after:inset-x-0 after:top-full after:h-4 after:bg-surface')}
-      >
-        <label htmlFor="agent-box" className="sr-only">
-          Ask the agent
-        </label>
-        <textarea
-          id="agent-box"
-          ref={box}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            // Tab in the empty box takes the suggestion it is showing.
-            if (e.key === 'Tab' && !e.shiftKey && !text && !clarified && shownPhrase.current) {
-              e.preventDefault();
-              setText(shownPhrase.current);
-              return;
-            }
-            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-              e.preventDefault();
-              send();
-            }
-          }}
-          maxLength={AGENT_LIMITS.instruction}
-          rows={3}
-          placeholder={clarified ? 'Answer the question' : 'Ask for ideas, or tell the agent what to do with the board'}
-          className={cx(
-            'w-full resize-none rounded-md border border-line-strong bg-surface py-2 pr-11 pl-2.5 text-[13px] leading-snug placeholder:text-ink-3 focus-visible:border-ink-3',
-            hinting && 'placeholder:text-transparent',
-          )}
-        />
-        {hinting && <TypingHint phrases={phrases} onPhrase={onPhrase} />}
-        <Tooltip label="Send (Enter)">
-          <button
-            type="submit"
-            aria-label="Send"
-            disabled={!text.trim() || busy}
-            className="pressable key-accent absolute right-1.5 bottom-2.5 flex size-8 items-center justify-center rounded-[8px] bg-accent text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:bg-surface-2 disabled:text-ink-3"
-          >
-            <ArrowUp aria-hidden size={16} strokeWidth={2} />
-          </button>
-        </Tooltip>
-        {text.length > AGENT_LIMITS.instruction - 80 && (
-          <span className="mt-1 block text-right text-[11px] text-ink-3 tabular-nums">
-            {text.length} of {AGENT_LIMITS.instruction}
-          </span>
+        focusTick={focusTick}
+        loading={!synced || Boolean(conversationId && !current && !loadError)}
+        busy={openingCanvas || transcript.busy || currentRun?.status === 'running'}
+        run={currentRun}
+        intro={(
+          <div>
+            {selectedNotes.length > 0 && <SelectedNotePreview notes={selectedNotes} />}
+            <p className="text-[12px] text-ink-3">
+              Working on: {selectedIds.length ? `${selectedIds.length} selected ${selectedIds.length === 1 ? 'note' : 'notes'}` : 'the whole board'}
+            </p>
+          </div>
         )}
-      </form>
-
-      {run && <RunArea boardId={boardId} run={run} />}
-
-      {ideas}
-
-      {recent.length > 0 && !busy && (
-        <section aria-labelledby="agent-recent" className="flex flex-col gap-1">
-          <h3 id="agent-recent" className="px-1 text-[13px] font-semibold text-ink">
-            Recent
-          </h3>
-          <ul className="flex flex-col">
-            {recent.map((r) => (
-              <li key={r}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setText(r);
-                    box.current?.focus();
-                  }}
-                  className="pressable key-quiet w-full truncate rounded-[7px] px-2 py-1.5 text-left text-[12px] text-ink-2 hover:bg-surface-2 hover:text-ink"
-                  title={r}
-                >
-                  {r}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+        footer={(
+          <>
+            {currentRun && <RunArea boardId={boardId} run={currentRun} />}
+            {transcript.error && <p role="alert" className="text-[13px] text-danger">{transcript.error} <Button size="sm" onClick={transcript.retry}>Retry</Button></p>}
+            {loadError && <p role="status" className="text-[13px] text-ink-3">{loadError} Send a message to try again.</p>}
+          </>
+        )}
+      />
       <AgentToast />
-    </div>
+    </>
   );
 }
 
-function RunArea({ boardId, run }: { boardId: string; run: AgentRun }) {
+export function RunArea({ boardId, run }: { boardId: string; run: AgentRun }) {
   if (run.status === 'running') {
     return (
-      <div role="status" className="flex items-center justify-between gap-2 rounded-md border border-line bg-surface px-3 py-2.5 text-[13px] text-ink-2">
+      <div role="status" className="flex items-center justify-between gap-2 text-[13px] text-ink-2">
         <span className="flex items-center gap-2">
-          <LoaderCircle aria-hidden size={16} strokeWidth={1.75} className="animate-spin text-ai motion-reduce:animate-none" />
+          <LoaderCircle aria-hidden size={16} strokeWidth={1.75} className="animate-spin motion-reduce:animate-none" />
           {STAGES[run.stage]}
         </span>
         <Button size="sm" variant="ghost" className="h-7" onClick={() => cancelRun()}>
@@ -228,7 +148,7 @@ function RunArea({ boardId, run }: { boardId: string; run: AgentRun }) {
         <p className="text-[13px] leading-relaxed text-danger">{run.error?.text ?? 'The agent could not make a plan. Nothing changed.'}</p>
         <div className="flex gap-2">
           {run.error?.code !== 'vague' && run.error?.code !== 'too_large' && (
-            <Button size="sm" onClick={() => void startRun(boardId, run.instruction)}>
+            <Button size="sm" onClick={() => void startRun(boardId, run.instruction, { explorationId: run.explorationId, scopeNoteIds: run.scopeNoteIds })}>
               Try again
             </Button>
           )}
@@ -255,31 +175,10 @@ function RunArea({ boardId, run }: { boardId: string; run: AgentRun }) {
     );
   }
   const plan = run.plan!;
-  if (plan.clarify) return null; // the question shows above the box
-  if (plan.answer) return <AnswerView plan={plan} />;
+  if (plan.clarify || plan.answer) return null; // Both are plain replies in the transcript.
   return <PlanPreview boardId={boardId} run={run} plan={plan} />;
 }
 
-// ---------- answer-only runs (PRD 3.6) ----------
-
-function AnswerView({ plan }: { plan: AgentPlan }) {
-  return (
-    <div className="flex flex-col gap-2">
-      <div className="rounded-md border border-ai-line bg-ai-bg px-3 py-2.5" aria-live="polite">
-        <span className="mb-1 block">
-          <Badge tone="ai">Agent</Badge>
-        </span>
-        <p className="text-[13px] leading-relaxed whitespace-pre-wrap text-ink">{plan.answer!.text}</p>
-      </div>
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[12px] text-ink-3">Nothing on the board changed.</span>
-        <Button size="sm" variant="ghost" onClick={discardRun}>
-          Done
-        </Button>
-      </div>
-    </div>
-  );
-}
 
 // ---------- plan preview (PRD 3.3) ----------
 
@@ -339,10 +238,10 @@ function PlanPreview({ boardId, run, plan }: { boardId: string; run: AgentRun; p
   const nothing = plan.steps.length === 0;
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="rounded-md border border-ai-line bg-ai-bg px-3 py-2.5">
+    <div className="plan-ready flex flex-col gap-3">
+      <div className="border-t border-line pt-3">
         <span className="mb-1 block">
-          <Badge tone="ai">Agent plan</Badge>
+          <span className="text-[12px] font-semibold text-ink-2">Agent plan</span>
         </span>
         <p className="text-[13px] leading-relaxed text-ink">{plan.summary}</p>
         {nothing && <p className="mt-1 text-[12px] text-ink-2">There is nothing to apply.</p>}
@@ -395,7 +294,7 @@ function PlanPreview({ boardId, run, plan }: { boardId: string; run: AgentRun; p
                     className="w-full resize-none rounded-sm border border-transparent bg-transparent px-1 py-0.5 text-[12px] leading-snug text-ink hover:border-line focus-visible:border-line-strong"
                   />
                   <span className="flex items-center gap-1.5 pl-1">
-                    <Badge tone="ai">AI</Badge>
+                    <span className="text-[12px] text-ink-3">AI</span>
                     <span className="text-[11px] text-ink-3">New note{n.kind ? `, ${n.kind}` : ''}</span>
                   </span>
                 </span>
@@ -593,12 +492,12 @@ function IdeaPicker({ run, target }: { run: AgentRun; target: string }) {
         {run.ideas.map((i: AgentIdea) => {
           const d = i.conflictsWith ? decisions.find((x) => x.id === i.conflictsWith) : undefined;
           return (
-            <li key={i.id} className="flex items-start gap-2 rounded-md border border-ai-line bg-ai-bg px-3 py-2">
+            <li key={i.id} className="flex items-start gap-2 border-t border-line pt-2">
               <Tick checked={isOn(run.ticks, tickKey.idea(i.id))} onChange={(v) => setTick(tickKey.idea(i.id), v)} label={`Use the idea "${first(i.text, 40)}"`} />
               <span className="flex min-w-0 flex-col gap-1">
                 <span className="text-[12px] leading-snug text-ink">{i.text}</span>
                 <span className="flex items-center gap-1.5">
-                  <Badge tone="ai">AI</Badge>
+                  <span className="text-[12px] text-ink-3">AI</span>
                   <span className="text-[11px] text-ink-3">{i.angle}</span>
                 </span>
                 {d && <Warn>Goes against: {first(d.text, 80)}</Warn>}

@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { writeFileSync } from 'node:fs';
 import * as Y from 'yjs';
 import { z } from 'zod';
-import { ReportSchema } from '../shared/report-schema.ts';
+import { GeneratedReportSchema } from '../shared/report-schema.ts';
 import type { Snapshot } from '../shared/types.ts';
 import { readBoard } from '../shared/ydoc.ts';
 import { BASE_URL, client, effortParams, structured, type Msg } from './ai.ts';
@@ -134,7 +134,7 @@ for (const model of configured) {
         { role: 'system', content: prompts.makeReport(snapshot, 'Asha') },
         { role: 'user', content: `Here is the exploration so far:\n\n<context>\n${transcript}\n</context>\n\nWrite the report.` },
       ],
-      ReportSchema,
+      GeneratedReportSchema,
       { name: 'makeReport', maxTokens: TASKS.makeReport.maxTokens, reasoning: TASKS.makeReport.reasoning },
     );
     return { text: `(${r.mode})\n\n\`\`\`json\n${JSON.stringify(r.data, null, 2)}\n\`\`\``, usage: r.usage };

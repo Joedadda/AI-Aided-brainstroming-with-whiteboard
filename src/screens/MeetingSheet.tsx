@@ -2,6 +2,7 @@ import { Dialog } from '@base-ui/react/dialog';
 import { ChevronRight } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { ApprovedSession, DraftDecision, MeetingDraftView, NoteKind, Passage } from '../../shared/meeting-schema.ts';
+import { meetingProblem } from '../../shared/meeting-schema.ts';
 import { LockGlyph, shorten } from '../canvas/LockPanel.tsx';
 import { KIND_COLOR } from '../../shared/session-layout.ts';
 import { approveSession, discardDraft } from '../lib/meeting.ts';
@@ -44,7 +45,7 @@ export function MeetingSheet({ viewCentre, onPlaced }: { viewCentre: () => { x: 
     if (!ready) return;
     setSections(fromDraft(ready.draft));
     setDecisions((ready.draft.decisions ?? []).map((d) => ({ ...d, on: true, locked: true, lockSection: d.sectionIndex !== null })));
-    setProblem(ready.draft.problem);
+    setProblem(meetingProblem(ready.draft));
     setUseProblem(true);
   }, [ready?.draftId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -53,7 +54,7 @@ export function MeetingSheet({ viewCentre, onPlaced }: { viewCentre: () => { x: 
   const conflicts = sections.reduce((a, s) => a + s.notes.filter((n) => n.on && n.conflictsWith).length, 0);
   const conflictText = (id: string | null | undefined) => (id ? inForce.find((d) => d.id === id && d.status === 'locked')?.text : undefined);
   const tickedSections = sections.filter((s) => s.notes.some((n) => n.on && n.text.trim())).length;
-  const showProblem = Boolean(ready?.draft.problem) && !boardProblem.trim();
+  const showProblem = Boolean(ready) && !boardProblem.trim();
 
   const close = () => useStore.setState({ meetingSheet: undefined });
 

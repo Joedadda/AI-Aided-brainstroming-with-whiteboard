@@ -8,7 +8,7 @@ export type NoteKind = z.infer<typeof NoteKind>;
 
 export const MeetingDraftSchema = z.object({
   title: z.string().min(1).max(60).describe('Board title, at most 60 characters, names the topic, not a conclusion'),
-  problem: z.string().max(300).describe('The question the group is trying to answer, or an empty string'),
+  problem: z.string().max(300).describe('The explicit or inferred question that best frames the meeting'),
   sections: z
     .array(
       z.object({
@@ -116,3 +116,11 @@ export const MeetingDraftLoose = z.object({
     .describe('Decisions the meeting clearly agreed. At most 5. Empty when nothing was agreed'),
 });
 export type MeetingDraftLooseT = z.infer<typeof MeetingDraftLoose>;
+
+/** Also covers older saved drafts with an empty Problem and offline model output. */
+export function meetingProblem(draft: { problem: string; title: string; sections: { title: string }[] }) {
+  const question = draft.problem.trim();
+  if (question) return question.slice(0, 300);
+  const topics = [...new Set(draft.sections.map(({ title }) => title.trim()).filter(Boolean))].slice(0, 3);
+  return `What should we take forward from the discussion on ${topics.join(', ') || draft.title.trim() || 'the meeting topic'}?`;
+}

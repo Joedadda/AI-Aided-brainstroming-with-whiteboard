@@ -2,7 +2,39 @@
 
 Hand-off doc for any new session. Read this, then `Build_PRD-1.md` (the build spec, wins over older docs), then `project_context.md` (background). For the meeting feature, also `Adithya added docs/Meeting_Session_Build_PRD_.md`. **Updated at the end of every turn, with no exceptions** (rule in `CLAUDE.md`, set by the user on 25 Nov).
 
-Last updated: Wed 25 Nov 2026 (motion audit and project context review; no app code changed).
+Last updated: Thu 26 Nov 2026 (sticky-note AI attribution).
+
+## Sticky-note AI attribution, Thu 26 Nov
+
+AI-generated sticky notes now show plain **AI** in the author position, with no duplicate top tag. Human notes keep their author name. Updated the current-state PRD. TypeScript checked. Browser rendering was not rechecked.
+
+## Current-state PRD refresh, Thu 26 Nov
+
+Updated the reverse-engineered PRD with the blank-board context cards and sidebar guidance, inferred meeting Problem questions, private Explore and Decide sessions, report-based decision drafting, toolbar lock and unlock, and recorded verification limits. Documentation only.
+
+## Blank-board context and meeting Problem, Thu 26 Nov
+
+- New blank boards show the Problem card and two starter cards for meeting and general context. Both open the matching existing sidebar form. Each card can be skipped independently. A successful context import hides its matching prompt, and the first written sticky note clears both. Skips and note completion are remembered for the profile and board in the browser.
+- The starter cards now include a shared hint pointing to the sidebar's Context tab for adding context later.
+- Meeting drafts now ask the model for an explicit or inferred Problem question grounded in the discussion, including critiques and informational meetings. If a draft has no question, the app uses its validated topics as a fallback. The review preselects the question and fills an empty Problem card when the session is added to the board.
+- TypeScript and all 47 unit tests passed. The four targeted headless Chrome tests passed, including both starter entry points, Skip, clearing the prompts after the first written note, and populating the Problem card from a critique fixture in offline mode. Live model phrasing was not tested.
+
+## Selection toolbar Lock and Unlock, Thu 26 Nov
+
+- The note selection toolbar uses one button for both actions. On a mixed selection, Lock applies to the remaining unlocked notes. Once all selected notes are locked, Unlock reopens their linked decisions together as one undoable action.
+- Locking the same unchanged note again reuses its matching reopened decision and preserves its history. TypeScript and both headless sticky-note tests passed, including Lock, Unlock, and Lock again.
+
+## Your sessions and report-based decisions, Thu 26 Nov
+
+- The board sidebar lists owner-only sessions by recent activity and shows their count on the first rail icon. Each session has an Explore or Decide tag, title, source count, time, status, and a Discard menu. The separate Exploring privately list still reflects other people's shared note reservations.
+- The Reports area supports selecting approved reports. Talk it through opens a private Decide chat with the chosen reports and current locked decisions. Draft now opens the same session and immediately generates an editable draft. Lock decision publishes the reviewed decision with its source reports. The conversation and draft remain private. Decide sessions make no note reservations.
+- Added owner-only session listing, a backward-compatible exploration kind and report ID migration, and decision draft, lock, and discard endpoints. Discard closes the private session and releases its reservations. Previously published decisions remain on the board.
+- Sticky notes use an icon and a tooltip for private exploration. Meeting, AI, and decision indicators share a wrapping row.
+- TypeScript, all 47 unit tests, and all 6 headless Chrome tests passed. The browser suite ran on unused local ports with offline AI. The two-profile test verified an empty session list and HTTP 404 for the second profile, plus the owner's draft, explicit lock, and discard. Live AI decision drafting still needs a rehearsal.
+
+## Current-state PRD, Wed 25 Nov
+
+The user asked for a PRD reverse-engineered from the current prototype. Added [PRD - Current Prototype.md](PRD%20-%20Current%20Prototype.md) after reviewing project Markdown and tracing the board, private Agent conversation, report, decision, and meeting flows in the client and API. It records the product rationale, requirements, privacy boundaries, and proposed user-test observations. TypeScript and all 47 unit tests passed. All 13 source references resolved. Playwright was blocked at local server startup, and live AI was not rerun. The existing verification items below still apply.
 
 ## Where things stand (v2)
 
@@ -32,9 +64,10 @@ The user asked to attempt every milestone (M0 to M8), run locally (two windows o
 5. `npm run check:models` once a key is in: (a) checks GET /v2/models lists every configured model, (b) one tiny call per model with latency. `npm run check:models -- --compare` also runs the five-prompt comparison into `docs/model-comparison.md`. If an ID is missing, fix `server/models.config.ts` (IDs live only there).
 6. Two people locally: a normal window and a private window. In development only, `?profile=2` on any URL keeps a second profile in the same browser (per tab). `window.__store` exposes the UI store in development.
 7. Data lives in `data/app.db` (SQLite, gitignored). Delete it to start clean.
-8. `npm test`: unit tests for the meeting segmenter, the draft checks and the session layout (node:test through tsx, 23 tests).
+8. `npm test` runs 47 unit tests covering Agent plan checks, meeting segmentation and draft validation, and session layout.
 9. `npm run check:meeting` (live key): runs every fixture in `fixtures/meetings/` through segment, condense and session, and prints stages, latency, tokens, counts and fallback use. `-- <file>` for one file. `MOCK_AI=1` runs it on the canned replies.
 10. A second copy of the app can run beside the first: `.claude/launch.json` has `app-alt` (web 5183, API 8797, collab 8798). `vite.config.ts` now reads `WEB_PORT`, `API_PORT` and `COLLAB_PORT` (defaults unchanged). Both copies share `data/app.db`, so do not open the same board in both.
+11. `npm run test:e2e` runs the private report checks in installed Google Chrome in headless mode. Playwright starts its own local server (web 5295, API 8895, collab 8896) with an in-memory database and offline AI replies. Failed runs keep traces in `test-results/`.
 
 ## Architecture (v2)
 
@@ -971,12 +1004,171 @@ Done: full screen now shows the locked decisions block (only when something is l
 
 Checked (app-fallback, 5193): chips show in full screen for the whole board. Typecheck passes. Not checked: the locked decisions block (that board has none locked), chips following a selection. `npm test` not re-run.
 
+## Full-screen Agent is now a private canvas: own context, findings, report (Wed 25 Nov, night)
+
+User said yes to adding Findings and Make report (this closes the open question in the section above; "Add your own context" included).
+
+- **Server:** new `POST /api/explorations/agent` (`server/index.ts`): creates or updates an exploration from the notes in scope (up to 120) and appends the exchanges not yet saved. The agent route takes `sessionId` and adds that person's private context to what it reads (`server/agent/router.ts`).
+- **Client:** `src/lib/agent.ts` keeps a `log` of asks and answers (ideas and "applied" lines included) and the `session`. New `src/canvas/AgentSession.tsx` has `AgentGiven` (locks, chips capped at 45% of the window, own context) and `AgentFindings` (Make report / Review draft above the findings, existing `DraftSheet`). `AddOwnContext` is exported with `startOpen` and `note`; `DraftSheet` has `onApproved`.
+- The exploration is made only when needed (own context or Make report). Approving closes it, clears the log and returns to the board.
+
+**Limits:** the log lives in the page, so a reload or leaving the board loses exchanges not yet saved. No notes are reserved (no "exploring" dots on the board). Private context reaches the agent but not the idea cards. A report made on the whole board lists every note under "Notes used" (58 in the test). The session shows in "Your notes" as a canvas and opens in the old canvas view. Full screen still shows only the latest answer, not a thread. Backup: `backups/pre-agent-report-2026-11-25/`.
+
+Checked end to end (app-fallback, 5193, live AI) on a new finished-example board `TRJQcIsCDaFFyt`: locks and chips shown; "Check these against locked decisions" answered; Make report drafted; findings listed; own context added; Approve and share put the report on that board and returned to it. Typecheck passes, `npm test` 47/47. Not checked: a later instruction actually using the private context, Regenerate, editing the draft, a second window not seeing anything private, the old canvas view of an agent session, applying a plan then reporting.
+
+## Private canvas: decision disclosure and selected cards only (Wed 25 Nov, night)
+
+User asked to remove the heavy locked-decisions container and to keep the canvas context area limited to the cards taken from the board.
+
+- `src/screens/LockedBlock.tsx`: Locked decisions is now a compact chevron disclosure. It is collapsed by default; opening it reveals every current decision as a flat, divided list with the existing reason, provenance, New state and View on board action. The previous two-row preview, Show more control and nested decision cards are gone.
+- `src/screens/Canvas.tsx`: the private canvas's “What the AI was given” area now displays only the selected note cards. The problem, board context chips and Add your own context control are hidden there; the model still receives the board context. The full-screen Agent keeps its existing broader context display and private-context control.
+- Empty-chat copy now says the AI has the board context and selected cards.
+
+Checked: `npm run typecheck` passes. Not checked in the browser after this visual change.
+
+## Private canvas: shared top and left alignment (Wed 25 Nov)
+
+The user asked to remove the nested container and align the canvas content at the top left.
+
+- `src/screens/Canvas.tsx` places locked decisions, selected cards, starter prompts and messages in one scroll area with a common left edge. Saved conversations use the same alignment. Messages use plain text and author labels. The composer stays within reach at the bottom and shares the left edge.
+- `src/screens/LockedBlock.tsx` places the chevron beside the label and uses spacing between decision rows. Reasons, provenance and board links are available when expanded.
+- `src/canvas/AgentPanel.tsx` and `src/canvas/AgentSession.tsx` remove the expanded Agent's centered column and bordered context scroller. The context heading lists explicitly selected cards. Added private context has its own inline controls. The AI receives board context through the existing server flow.
+
+TypeScript and `git diff --check` passed. Browser layout review is pending.
+
+## Private chat: remove context display and trace the two entry points (Wed 25 Nov)
+
+Removed “What the AI was given” and its note chips from the active and saved canvases in `src/screens/Canvas.tsx` and the expanded Agent in `src/canvas/AgentSession.tsx`. The server still receives the context used by each flow.
+
+“Explore privately” creates an exploration and opens the Canvas route. Messages are saved to that exploration as the chat runs. The Agent expand button enlarges the sidebar on the board. Agent exchanges are held in memory and copied to an exploration when the user adds private context or makes a report. Chat and board plans use different endpoints, and the current Agent history does not become a continuous private chat when switching between views.
+
+Proposed consolidation uses the Canvas route and a single saved exploration per conversation. Both entry points open that view. The chat shows normal replies and reviewed board plans in the same transcript, and reports use the saved history. Preserve existing exploration links and the explicit approval required for board changes. The merge is still pending.
+
+TypeScript and `git diff --check` passed. A source search found no remaining instance of the old heading or its component in `src`. Browser verification is pending.
+
+## Private chat: one window and transcript (Wed 25 Nov)
+
+The user confirmed that expanding the Agent and choosing Explore privately should open the same chat.
+
+- The sidebar expand button, Explore privately, section exploration and the Ask AI handoff use `src/lib/private-canvas.ts`. They resume the active open exploration for the board and profile and navigate to the same `Canvas` route. Existing exploration links still work.
+- `server/index.ts` reuses the open exploration, carries forward explicitly selected notes and private context, and appends buffered Agent messages with stable IDs. Once the canvas is open, chat, Agent replies and report drafting use its saved transcript. Locked decisions and the private context control appear in the common view.
+- The expanded sidebar view and its separate findings component are removed. The common composer can reply or propose board changes. Plans use the existing preview and require an explicit Apply plan action. The planner receives recent messages from the same owner’s conversation.
+- The sidebar’s exchanges before the first handoff are held in memory until the canvas opens. Unapplied plan controls are kept during navigation in the same tab, while the saved transcript persists independently.
+
+Production build and `git diff --check` passed. Browser click-through and two-profile privacy checks are pending.
+
+## Private chat: white Agent design (Wed 25 Nov)
+
+The user chose the expanded Agent screenshot as the reference for the unified chat. `src/screens/Canvas.tsx` now uses the white surface, compact Agent header, left aligned content and outlined composer from that view. Composer suggestions use the existing typing hint. Make report sits under Findings and becomes available once the conversation has a reply. The saved example uses the same white shell.
+
+`src/canvas/Dock.tsx` shares its navigation rail with the canvas. `src/styles.css` supports the same active icon styling on the canvas route. Both launchers continue to open the same conversation.
+
+TypeScript and `git diff --check` passed. Browser comparison with the reference is pending.
+
+## Board sidebar: clipped Problem text (Wed 25 Nov)
+
+The user showed the Problem text clipped below its heading. The field could measure itself at zero height while the Board panel was hidden, then keep that height when the panel opened. `src/canvas/ProblemField.tsx` now measures at a visible width and resizes on panel visibility, width, text and viewport changes. Long text still scrolls at the existing height cap.
+
+TypeScript and the diff check passed. Browser verification is pending.
+
+## Problem panel name and icon options (Wed 25 Nov)
+
+The user asked for alternatives to the Board label and grid icon that make the problem the focus. Reviewed the rail and panel in `src/canvas/Dock.tsx` and the product’s framing step. Proposed Problem with a target, Problem brief with a document, and Core question with a focus icon. Problem with a target is the recommendation. No code changes or browser checks for this design discussion. The user will choose a direction.
+
+## Core question with focus brackets (Wed 25 Nov)
+
+The user chose the focus brackets direction. `src/canvas/Dock.tsx` uses the Lucide Scan icon and Core question label in the shared rail and panel header. The editable field sits directly beneath the header, with the board visibility toggle beside the fold button. `src/canvas/ProblemField.tsx` uses Core question as the sidebar field’s accessible name.
+
+TypeScript and the diff check passed. Browser verification is pending.
+
+## Expanded Agent controls and composer (Wed 25 Nov)
+
+The user asked for the Agent icon to minimise the expanded chat, a centred composer in the expanded view, and larger header icons. `src/screens/Canvas.tsx` routes both minimise controls back to the board with the Agent sidebar open. The composer is centred within the chat column and the two header icons use 24 px glyphs and 44 px buttons.
+
+`src/canvas/Dock.tsx` preserves the Agent panel when returning to the board and describes the active rail button as Minimise Agent chat. `src/lib/agent.ts` keeps unsent text for that conversation until it is expanded again in the same tab.
+
+TypeScript and the diff check passed. Browser verification is pending.
+
+## Board title, sidebar motion and pinned Problem text (Wed 25 Nov)
+
+- `src/ui/BoardHeader.tsx` replaces the yellow Finished example badge beside the board title with a black exclamation mark on a grey circle. The tooltip explains the status on hover and keyboard focus.
+- `src/canvas/Dock.tsx`, `src/screens/Canvas.tsx` and `src/lib/sidebar-motion.ts` share a transition for the sidebar opening, folding and expanding into chat. The browser animates snapshots for 240 ms without resizing the live board on each frame. Keyboard navigation and reduced motion skip the transition. Browsers without view transitions use the existing style system for a short entrance. The expansion loads the saved chat before swapping views.
+- `src/canvas/ProblemField.tsx` changes the pinned Problem card body from 17 px to 13 px and its label to 13 px. The sidebar editor retains its existing type size.
+
+Production build and the diff check passed. Browser comparison, tooltip interaction and animation feel are pending.
+
+## Pinned Problem card height and close control (Wed 25 Nov)
+
+The user asked for the pinned card to stay within the height shown in the reference. `src/canvas/ProblemField.tsx` caps the card at 152 CSS pixels. Long text scrolls inside the card, and an X in the top-right corner uses the board’s existing visibility setting. The eye beside Core question reopens it.
+
+TypeScript and the diff check passed. Browser verification is pending.
+
+## Problem card on the whiteboard (Wed 25 Nov)
+
+The user replaced the floating Problem card with a permanent whiteboard card that grows as people type. New blank boards start with a single editable Problem card. Existing boards keep their shared problem text and receive a starting position just left of their existing content. The board saves the card’s position, and dragging its heading uses the same move and undo flow as other board items.
+
+`src/canvas/BoardCanvas.tsx` renders the card alongside the board nodes and includes it in Fit. Opening a large board starts near the card when the full overview would make it hard to read. `src/canvas/ProblemField.tsx` keeps the rounded card and grows its editor without the old height or text limit. Core question still edits the same text and now offers Find Problem card. The server and shared Yjs document initialise and persist the position for new and older boards.
+
+Production build and the diff check passed. Browser verification of placement, drag, long text and reopening is pending.
+
+## Problem card drag and edit behaviour (Wed 25 Nov)
+
+The user reported that dragging the Problem card felt unreliable. The drag handle covered only the title strip, and the always editable textarea intercepted pointer gestures in the body. `src/canvas/BoardCanvas.tsx` removes the handle restriction and uses the board’s ordinary click and Enter paths to edit. `src/canvas/ProblemField.tsx` lets the idle card receive drags across its full surface. The active editor receives text selection gestures, and Escape or clicking away returns the card to its idle state.
+
+TypeScript and the diff check passed. Pointer verification in the browser is pending.
+
+## Problem card selection and double-click editing (Wed 25 Nov)
+
+The user asked for the Problem card to drag from anywhere, show the sticky note highlight, and enter editing on double-click. `src/canvas/BoardCanvas.tsx` uses normal board selection for the Problem card and routes double-click and keyboard Enter to its editor. Arrow-key moves of the selected card save its position. `src/canvas/ProblemField.tsx` keeps the editor idle until requested, and `src/styles.css` shares the sticky-note blue outline with the Problem card when selected, dragging or editing.
+
+TypeScript and the diff check passed. Browser pointer and keyboard checks are pending.
+
+## Problem card editing after selection (Wed 25 Nov)
+
+The user clarified that the first click selects and highlights the card. Clicking an already selected card opens its editor, even after a pause. `src/canvas/BoardCanvas.tsx` uses the card’s selection state before the current click and removes the timed double-click handler for the Problem card. Dragging and keyboard Enter still work.
+
+TypeScript and the diff check passed. Browser interaction is pending.
+
+## Agent conversation and Copy link (Wed 25 Nov)
+
+- `src/canvas/AgentChat.tsx` renders both the sidebar and expanded Agent. Your messages appear in grey bubbles, Agent replies sit directly on the white surface, and the composer stays below the scrollable transcript. The sidebar starts or resumes the same saved conversation as the expanded view. Follow-up messages are sent with its history. Board plans still require review and Apply plan.
+- Idea requests return numbered suggestions within the reply. Each idea has its own Place on board action, and the conversation retains the ideas and their placement status. `server/index.ts` and `server/db.ts` link suggestions to their reply and save successful turns together. The sidebar can still drag a suggestion’s placement button onto the board.
+- `src/ui/BoardHeader.tsx` removes the URL preview and shows a link icon beside Copy link. Clipboard feedback reflects whether the copy succeeded.
+
+TypeScript, the production bundle, and the diff check passed. Browser interaction, live model replies, and clipboard behaviour still need a click-through.
+
 ## Next steps
 
+- Shut down the prototype's shared test launcher on 26 Nov. Verified no Funnel route, no listeners on the test ports, and no connection to the former public HTTPS URL.
+
+- Railway preparation adds a Dockerfile and `npm start`. In production, Express serves the built frontend and API on Hocuspocus's HTTP server, using Railway's `PORT`. Mount a volume at `/data`, set `DATABASE_PATH=/data/app.db`, and set the server-side `SARVAM_API_KEY` on Railway. The local development launchers still work with their existing settings, and the local test launcher accepts `mock` for offline AI replies. The production build passed. The container itself has not been built locally because Docker Desktop's engine is unavailable.
+
+- The user confirmed the shared setup works. `docs/user-test-sop.md` records how to start the session, share a board, shut it down, and confirm that Funnel is off.
+- Checked Funnel after the session. `tailscale funnel status` returned `No serve config`, confirming no public route was active.
+- On a later launch attempt, the new copy reported ports 5197 and 443 already occupied. The existing port 5197 listener was still active and the public HTTPS app returned HTTP 200. The failed duplicate was safe to dismiss.
+
+- For private reports, the remaining check is the wording of a short, inconclusive report from live Sarvam. Use the headless Playwright suite for browser regression checks, as requested.
+
+- In a browser, click **Start a new board** on the home screen and confirm that the only card is the empty Problem card. Use **Start a sample case** for the prefilled Split Buddy board.
+
+- In both Agent views, send a follow-up and an idea request, place one idea, reopen the conversation, and confirm the transcript and placement status. Check Copy link at a wide viewport.
+
+- For the remote user test, double-click `Start user test.cmd` to run on port 5197 with `data/funnel-user-test.db` and the configured Sarvam key. Pass `mock` to opt into sample replies, or use `live` followed by the Funnel hostname if Vite requires it. Confirmed the launcher starts in live Sarvam mode. A model call and a public two-device rehearsal were not run.
+- `Share user test.cmd` now runs Vite, the API and Tailscale Funnel in one window. It reads this computer's Tailscale DNS name and allows that hostname in Vite. The reported 502 coincided with no app listening on 5197. Once the local launcher was running, its API responded in live mode and the Funnel hostname got a 403 from Vite. A separate rehearsal on local port 5297 and public HTTPS port 8443 returned HTTP 200, `mock: false`, and a successful `/collab` WebSocket upgrade. The rehearsal was shut down. The user's open launcher on 5197 was left running for them to close before switching to the sharing launcher.
+- The user clarified that they had opened the original launcher file without running it before seeing the 502. For the next attempt, close the old standalone Funnel window and double-click `Share user test.cmd` from File Explorer. Wait for `Vite ready` and `API on` before opening the HTTPS link.
+- The user's next screenshot shows Funnel, Vite and the live Sarvam API all started. `Cannot GET /` came from opening the backend address on port 8897. Open the HTTPS URL under `Available on the internet` for the shared app, or `http://127.0.0.1:5197/` on the host.
+- Copying a board link while viewing it at `127.0.0.1:5197` gives a local-only URL. Keep the board path and replace the local address with the Funnel HTTPS address. Once on the public URL, Copy board link uses that address.
+- The sharing launcher serves the working source through Vite and runs the API and collaboration server under `tsx watch`. Frontend changes can reload testers' tabs, and watched backend changes can disconnect collaboration and interrupt AI streams. The separate SQLite file isolates test data only. Keep the source stable during a session or run a separate snapshot for testers.
+- Clarified that a valid frontend edit usually updates in place or reloads the same board. A broken import or runtime error can leave the app unusable until the edit is fixed. A healthy backend restart usually allows collaborators to reconnect, though an in-flight AI response can be lost.
+- The earlier Vite overlay reported that `Dock.tsx` and `AgentPanel.tsx` imported the deleted `src/lib/ideas.ts`. Both imports have since been removed in the working tree. Browser verification is pending.
+
+- Check private canvas dismissal in the browser: click X, reopen the same canvas from Your notes, and confirm the conversation and composer draft are still there.
+- Browser check: open a decision, follow its source links and return. Open an approved report and a draft to check the white surfaces. Compare the selected Problem card with a selected section at two zoom levels. On blank space, check Select mode double-click and Sticky note placement with click or S and Enter.
+-2. Run a browser pass on the unified private canvas. Compare the white layout with the reference through both launch paths, reload the saved conversation, make a report, and review a plan before applying it. Check that a second profile cannot read the conversation.
 -1. Multiplayer: ask the user to retry two people with "Open this board as another person" or a private window, after reloading old tabs. The boards are built from v3 and the agent prompt is tuned: C1 live 37 to 39 of 40, C7 clean in about 3 of 5 runs (I22 is the usual false flag). C2 still puts I04 and I05 in Next sprint. Next: run `docs/demo-script.md` with two windows, keeping each test tab in front. During the demo, C7 may name one or two extra notes.
 0. Tactile buttons: the user said the subtler shadows look good. Look at the draft sheet, meeting sheet and a toast during the demo run.
 1. Full live run of `docs/demo-script.md` with a normal and a private window (finished example walk, then the fresh-case live step, then the new meeting step 7). The script still says "Open the Reports list on the right" and "opens Context (paperclip)"; the paperclip now lives in the left sidebar.
-2. Sidebar follow-ups: check the Answer tab from Ask AI, and the rail by keyboard. Replace the "S" when the logo exists.
+2. Sidebar follow-ups: verify the Problem field when switching tabs and resizing the panel. Check the Answer tab from Ask AI and the rail by keyboard. Replace the "S" when the logo exists.
 2. Meeting feature: all checks done, including the forced fallback (`AI_FORCE_FALLBACK`, launch config `app-fallback`) and demo step 7 with two profiles (`localhost` and `dev.localhost`). Only "Open a file" in step 7 was not clicked through.
 3. Hand tests not yet done: drag an idea from the tray, a real link chip, kill the network in one window and reconnect, 200 notes, forced 429 fallback.
 4. Decide with the user whether the 13 remaining `Badge` tags keep the all-caps look (one change in `src/ui/Badge.tsx` covers them all).
@@ -1119,4 +1311,80 @@ node_modules vendor Markdown was excluded because it is dependency documentation
 ## Motion audit, Wed 25 Nov
 
 User asked for a motion-focused review while Claude works on another task. Read and applied the installed `animate`, `animation-performance`, `review-animations`, `emil-design-eng`, and `userinterface-wiki` skills, then inspected the app's existing motion code. The app already has a strong foundation: shared easing tokens, reduced-motion handling, origin-aware pop-ups, tactile button feedback, and restrained canvas movement. Recommended next work: animate sidebar panel entry without resizing the canvas, refine the report-to-board handoff, add staged entry for agent-plan groups, and make toast entry and exit consistent. Keep canvas navigation, remote cursors and AI streaming utilitarian. No app code changed and no tests were run.
+
+## Motion system applied, Wed 25 Nov
+
+Applied the reviewed motion changes without touching `AgentSession.tsx`, which remains another worker's change.
+
+- **Dock content:** Board, Context, Agent and Answer content now fades and moves 8 px from the icon rail in 140 ms. The sidebar width and canvas geometry do not animate. Keyboard-initiated navigation is immediate, and reduced motion uses a short fade only.
+- **Agent plan:** an asynchronous plan enters as a small 35 ms staggered sequence of its groups. It uses transform and opacity only, has a 140 ms maximum delay, and reduces to a fade.
+- **Toasts:** board title, locked-decision, session-ready and undo toasts share a 200 ms transform-and-opacity entry and exit. They keep their current timer, focus and pointer behavior. Reduced motion fades only.
+- **Report arrival:** replaced the 1.6 s animated box shadow with a 240 ms transform-and-opacity arrival, avoiding a painted shadow animation.
+- **Composer hint:** it types only the first suggestion once, holds it for reading, then swaps later suggestions without the delete-and-retype loop. The Tab path is unchanged; reduced motion remains static.
+- **Input safeguards:** hover lift and quiet-key hover feedback now require a fine pointer. Route entry is immediate after keyboard navigation.
+
+`cmd /c npm run build` passes. Vite reports its existing large-chunk, module-directive and ineffective-dynamic-import warnings. No browser click-through was run in this turn.
+
+## Sticky note placement, Wed 25 Nov
+
+Removed the empty-canvas double-click shortcut in `src/canvas/BoardCanvas.tsx` at the user's request. Manual placement starts by choosing Sticky note in the toolbar or pressing S. Click the board to place the note, or press Enter to place it at the centre of the view. Updated WB-1 and the board flow in `Build_PRD-1.md`.
+
+Typecheck passed. The isolated test server's local port was unreachable from Chrome, so pointer behavior still needs a browser check.
+
+## Section selection handles, Wed 25 Nov
+
+Matched the selected section controls to the screenshot: a thin blue outline and four white square corner handles with blue borders. The handles are 16 px with 3 px borders and remain draggable. The controls are visible on selected sections in Select mode. Changes are in `src/styles.css` and `src/canvas/BoardCanvas.tsx`. Typecheck passed. Visual comparison and resizing in the browser are pending.
+
+## Private canvas dismissal, Wed 25 Nov
+
+The X in `src/screens/Canvas.tsx` now returns to the board immediately. The saved canvas stays open in storage and remains available under Your notes. Dismissing the view preserves the conversation, composer draft and note reservations. The minimise button still opens the Agent sidebar. Added the dismissal behavior to `Build_PRD-1.md`.
+
+Typecheck passed. The localhost app did not respond, so closing and reopening were not checked in the browser.
+
+## Selection correction, white report surfaces and decision reader, Wed 25 Nov
+
+- Reverted the section handle size and mode changes. The Problem card now uses the original section style with a blue outline and four small white corner markers when selected. The markers are visual and the card still sizes to its text.
+- Changed the shared page background to white and the secondary surface from cream to neutral gray. The approved report, its header and example-chat callout, and the draft sheet use white.
+- Clicking a decision card opens `/b/:boardId/decision/:decisionId`. The white reader shows the complete decision and its available reasons, reports and source links. It includes a Back to board button and handles both current decisions and legacy mock cards.
+
+Production build, route round trips and diff check passed. Localhost did not respond, so the browser checks are pending.
+
+## Blank board creation, Wed 25 Nov
+
+The primary home action in `src/screens/Home.tsx` previously created a prefilled Split Buddy case. It now reads **Start a new board** and creates a blank board. The case remains available as **Start a sample case**. The empty Problem card is still the starting point, as requested earlier.
+
+TypeScript and the source diff check passed. An isolated run verified that Vite serves the new action, the board API stores no content or private conversations for either a blank or default request, and the sample case still contains notes. Browser access was unavailable, so the pointer click and rendered board were not verified.
+
+## Private reports, Wed 25 Nov
+
+The supplied conversation explored a possible coordinator and its tradeoffs without settling on a direction. For short conversations, the report now starts with a one- or two-sentence summary, then up to two findings and two open questions. Supporting details are kept only when the discussion warrants them. The Decision field at the bottom is optional and written by the author. It autosaves, carries through regeneration, and appears in the approved report.
+
+- The draft and reader show explicitly selected notes in a collapsed list, with the list omitted when there are no selections. `server/exploration-notes.ts` records sidebar selections independently from note reservations. `server/index.ts` saves the list with the draft and uses it when approving. Older drafts use the canvas selections as a fallback.
+- `src/canvas/AgentChat.tsx` recognises direct requests such as "Can you make a report?" or "Okay, draft a report now" and opens the same review flow as Make report. Typed requests refresh unedited drafts and open edited drafts for review. Approval shares the report with the board.
+- `server/prompts.ts` and `shared/report-schema.ts` define the compact generated report and keep the author-entered Decision separate. `src/screens/DraftSheet.tsx` saves it as part of the private draft. Regenerate carries the saved decision into the new draft.
+- The headless regression suite lives in `e2e/private-report.spec.ts` and `playwright.config.ts`. `CLAUDE.md` records the instruction to use Playwright for future browser tests.
+
+All three Playwright tests passed, including selected and whole-board sidebar conversations, draft privacy from a second profile, decision persistence after reload and regeneration, and sharing to the second profile. All 47 unit tests passed. TypeScript and the production client build passed. These results are from the implementation turn. This handoff update checked the log against the source and test configuration without rerunning the suites.
+
+## AI title badges, Wed 25 Nov
+
+Removed the AI title badge from the board header and section titles in `src/ui/BoardHeader.tsx` and `src/canvas/nodes.tsx`. Title generation and editing still use the same logic. Typecheck and all three existing Playwright tests passed. The suite does not specifically assert badge visibility.
+
+## Sticky note height, Wed 25 Nov
+
+Sticky notes grow vertically as text wraps in the editor and the read view. The saved height supplies the minimum, and React Flow measures the rendered height for canvas bounds. The editor has no internal scrollbar and the read view shows the full text. Updated WB-1 in `Build_PRD-1.md`.
+
+Typecheck and all four Playwright tests passed. The new test checks growth without overflow, shrinking when text is removed, and the full long text after reopening the board. It covers explicit line breaks and a long unbroken string.
+
+## Agent sparkle and selection preview, Wed 25 Nov
+
+The selection bar now uses a sparkle icon for Ask the agent and a text-only Explore privately button. The popover still offers its quick suggestions. Enter or Ask opens the Agent sidebar, sends the typed message with the selected note IDs, and focuses the conversation. Leaving a note editor by clicking a toolbar control now keeps focus on the clicked control.
+
+The Agent sidebar illustrates the current selection with up to three blank notes in their board colors, a white fade at the bottom, and the full scope count below. Clearing the selection removes the preview and returns the scope to the whole board.
+
+Typecheck and all five Playwright tests passed. The handoff test verified a two-note selection, suggestion visibility, the selected IDs on the sent question, the reply and composer focus in the sidebar, and the preview disappearing when the selection clears.
+
+## Agent note preview labels, Wed 25 Nov
+
+Increased the preview height from 104 px to 126 px and moved the start of the white fade down to reveal more of the colored notes. The notes use centered 18 px labels, `#idea1`, `#idea2` and `#idea3`, in black at 40% opacity. Overlapping notes can cover parts of the labels. Typecheck and all five Playwright tests passed. The handoff test verified the label text and its color.
 

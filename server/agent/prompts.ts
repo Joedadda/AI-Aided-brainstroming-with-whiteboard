@@ -51,7 +51,12 @@ How to fill the schema:
 - summary: one or two plain sentences saying what the plan does, for example "Sorts 40 notes into 7 groups and leaves 2 where they are."
 - Leave lists empty and strings "" when they do not apply.`;
 
-export function agentUser(c: AgentContext, opts: { previous?: { instruction: string; plan: AgentPlan }; refinement?: string; clarified?: { instruction: string; question: string } } = {}) {
+export function agentUser(c: AgentContext, opts: {
+  history?: { role: 'user' | 'assistant'; content: string }[];
+  previous?: { instruction: string; plan: AgentPlan };
+  refinement?: string;
+  clarified?: { instruction: string; question: string };
+} = {}) {
   const refOf = new Map<string, string>([...c.notes.map((n) => [n.id, n.ref] as const), ...c.sections.map((s) => [s.id, s.ref] as const), ...c.decisions.map((d) => [d.id, d.ref] as const)]);
   const sections = c.sections
     .map((s) => {
@@ -78,6 +83,7 @@ export function agentUser(c: AgentContext, opts: { previous?: { instruction: str
       ? `Nothing is selected. ${c.notes.length} of ${c.total} notes are in scope (the newest).`
       : `Nothing is selected, so every note on the board is in scope (${c.notes.length}).`;
 
+  const history = opts.history?.map((m) => `<message role="${m.role}">${esc(cut(m.content, 1500))}</message>`).join('\n');
   let ask = `<instruction>${esc(c.instruction)}</instruction>`;
   if (opts.clarified) {
     ask = `Earlier the person wrote: <instruction>${esc(opts.clarified.instruction)}</instruction>\nYou asked: ${esc(opts.clarified.question)}\nTheir answer: <instruction>${esc(c.instruction)}</instruction>`;
@@ -102,6 +108,7 @@ Decisions in force:
 ${decisions || '(none)'}
 </board>
 ${scope}
+${history ? `Earlier conversation, for reference only:\n<conversation>\n${history}\n</conversation>` : ''}
 
 ${ask}`;
 }

@@ -6,7 +6,7 @@ import { decisionsMap, readDecisions } from './decision-schema.ts';
   The shared document for one board (Build PRD 5). Everything in it reaches every
   connected browser, so nothing private ever goes in here.
 
-    meta:     Y.Map  { title, titleSource, titleProposedBy, kind, decision }
+    meta:     Y.Map  { title, titleSource, titleProposedBy, kind, decision, problemPosition }
     problem:  Y.Text (the frame, edited together)
     notes:    Y.Map<id, Y.Map { text: Y.Text, x, y, w, h, color, authorId, authorName, authorColor,
                                  origin, sectionId, reservedBy, reservedByName, reservedByColor, createdAt }>
@@ -22,6 +22,8 @@ import { decisionsMap, readDecisions } from './decision-schema.ts';
 */
 
 export const STICKY = 200;
+export const PROBLEM_NODE_ID = 'board-problem';
+export const PROBLEM_CARD_WIDTH = 560;
 /** Section geometry shared by the large-idea section and meeting placement. */
 export const SECTION_PAD = 28;
 export const SECTION_HEAD = 64;
@@ -40,6 +42,33 @@ export const parts = (doc: Y.Doc) => ({
 const str = (m: Y.Map<unknown>, k: string, d = '') => (typeof m.get(k) === 'string' ? (m.get(k) as string) : d);
 const num = (m: Y.Map<unknown>, k: string, d = 0) => (typeof m.get(k) === 'number' ? (m.get(k) as number) : d);
 const strOrNull = (m: Y.Map<unknown>, k: string) => (typeof m.get(k) === 'string' ? (m.get(k) as string) : null);
+
+function savedProblemPosition(meta: Y.Map<unknown>): { x: number; y: number } | undefined {
+  const value = meta.get('problemPosition') as { x?: unknown; y?: unknown } | undefined;
+  return typeof value?.x === 'number' && Number.isFinite(value.x) && typeof value.y === 'number' && Number.isFinite(value.y)
+    ? { x: value.x, y: value.y }
+    : undefined;
+}
+
+function defaultProblemPosition({ notes, sections }: ReturnType<typeof parts>) {
+  let left = Infinity;
+  let top = Infinity;
+  for (const items of [notes, sections]) {
+    items.forEach((item) => {
+      left = Math.min(left, num(item, 'x'));
+      top = Math.min(top, num(item, 'y'));
+    });
+  }
+  return Number.isFinite(left) ? { x: left - PROBLEM_CARD_WIDTH - 80, y: top } : { x: 0, y: 0 };
+}
+
+/** Give older boards a stable starting position without touching their problem text. */
+export function ensureProblemPosition(doc: Y.Doc): boolean {
+  const p = parts(doc);
+  if (savedProblemPosition(p.meta)) return false;
+  p.meta.set('problemPosition', defaultProblemPosition(p));
+  return true;
+}
 
 export function readNote(id: string, m: Y.Map<unknown>): Card {
   const t = m.get('text');
@@ -130,7 +159,12 @@ export function readBoard(doc: Y.Doc) {
   const reports: BoardReport[] = [];
   p.reports.forEach((r) => reports.push(r));
   reports.sort((a, b) => a.approvedAt - b.approvedAt);
-  return { meta: readMeta(doc), problem: p.problem.toString(), notes, sections, chips, reports, decisions: readDecisions(doc) };
+  return {
+    meta: readMeta(doc),
+    problem: p.problem.toString(),
+    problemPosition: savedProblemPosition(p.meta) ?? defaultProblemPosition(p),
+    notes, sections, chips, reports, decisions: readDecisions(doc),
+  };
 }
 
 export interface NewNote {

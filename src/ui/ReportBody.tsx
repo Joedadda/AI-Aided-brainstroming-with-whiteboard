@@ -24,8 +24,8 @@ export function ReportBodyView({ body: content, openAll = false }: { body: Repor
         <p className="text-[17px] leading-[1.6] text-pretty text-ink">{content.summary}</p>
       </section>
 
-      <Accordion.Root multiple defaultValue={openAll ? ALL : []} className="border-t border-line">
-        <Section value="findings" title="Findings" count={content.findings.length} empty="No findings.">
+      <Accordion.Root multiple defaultValue={openAll ? ALL : []} className="empty:hidden border-t border-line">
+        <Section value="findings" title="Findings" count={content.findings.length}>
           {content.findings.map((f, i) => (
             <Item key={i} main={f.text} label="Reason" detail={f.reason}>
               {evidenceFor(i + 1).length > 0 && (
@@ -45,7 +45,7 @@ export function ReportBodyView({ body: content, openAll = false }: { body: Repor
           ))}
         </Section>
         {unlinked.length > 0 && (
-          <Section value="unlinked" title="Other evidence" count={unlinked.length} empty="">
+          <Section value="unlinked" title="Other evidence" count={unlinked.length}>
             {unlinked.map((e, i) => (
               <li key={i} className="text-[15px] leading-relaxed text-ink">
                 {e.text}
@@ -54,7 +54,14 @@ export function ReportBodyView({ body: content, openAll = false }: { body: Repor
             ))}
           </Section>
         )}
-        <Section value="objections" title="Objections" count={content.objections.length} empty="No objections were raised.">
+        <Section value="questions" title="Open questions" count={content.open_questions.length}>
+          {content.open_questions.map((q, i) => (
+            <li key={i} className="text-[15px] leading-relaxed text-ink">
+              {q.text}
+            </li>
+          ))}
+        </Section>
+        <Section value="objections" title="Objections" count={content.objections.length}>
           {content.objections.map((o, i) => (
             <Item key={i} main={o.text} label="Why it matters" detail={o.reason} />
           ))}
@@ -63,20 +70,18 @@ export function ReportBodyView({ body: content, openAll = false }: { body: Repor
           value="rejected"
           title="Rejected directions"
           count={content.rejected_directions.length}
-          empty="Nothing was ruled out."
         >
           {content.rejected_directions.map((r, i) => (
             <Item key={i} main={r.text} label="Dropped because" detail={r.reason} />
           ))}
         </Section>
-        <Section value="questions" title="Open questions" count={content.open_questions.length} empty="No open questions.">
-          {content.open_questions.map((q, i) => (
-            <li key={i} className="text-[15px] leading-relaxed text-ink">
-              {q.text}
-            </li>
-          ))}
-        </Section>
       </Accordion.Root>
+      {content.decision && (
+        <section aria-labelledby="decision-heading">
+          <h3 id="decision-heading" className="mb-2 text-[15px] font-semibold text-ink">Decision</h3>
+          <p className="text-[15px] leading-relaxed whitespace-pre-wrap text-ink">{content.decision}</p>
+        </section>
+      )}
     </div>
   );
 }
@@ -85,15 +90,14 @@ function Section({
   value,
   title,
   count,
-  empty,
   children,
 }: {
   value: SectionKey;
   title: string;
   count: number;
-  empty: string;
   children: ReactNode;
 }) {
+  if (!count) return null;
   return (
     <Accordion.Item value={value} className="border-b border-line">
       <Accordion.Header className="m-0">
@@ -107,11 +111,7 @@ function Section({
       </Accordion.Header>
       <Accordion.Panel className="accordion-panel">
         <div className="pb-5 pl-6">
-          {count === 0 ? (
-            <p className="text-[14px] text-ink-3">{empty}</p>
-          ) : (
-            <ol className="flex list-decimal flex-col gap-4 pl-4 marker:text-[13px] marker:text-ink-3">{children}</ol>
-          )}
+          <ol className="flex list-decimal flex-col gap-4 pl-4 marker:text-[13px] marker:text-ink-3">{children}</ol>
         </div>
       </Accordion.Panel>
     </Accordion.Item>

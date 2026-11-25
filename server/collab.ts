@@ -1,5 +1,6 @@
 import { Server } from '@hocuspocus/server';
 import * as Y from 'yjs';
+import { ensureProblemPosition } from '../shared/ydoc.ts';
 import { userForToken } from './auth.ts';
 import { q } from './db.ts';
 
@@ -26,6 +27,9 @@ export const collab = new Server({
   async onLoadDocument({ document, documentName }) {
     const row = q.get<{ yjs_state: Uint8Array | null }>('SELECT yjs_state FROM boards WHERE id = ?', documentName);
     if (row?.yjs_state) Y.applyUpdate(document, new Uint8Array(row.yjs_state));
+    if (row && ensureProblemPosition(document)) {
+      q.run('UPDATE boards SET yjs_state = ? WHERE id = ?', Y.encodeStateAsUpdate(document), documentName);
+    }
     return document;
   },
 

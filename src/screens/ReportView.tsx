@@ -41,8 +41,8 @@ export function ReportView({ boardId, reportId }: { boardId: string; reportId: s
   });
 
   return (
-    <div className="screen-enter flex-1">
-      <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-line bg-bg/95 px-8 py-3 backdrop-blur">
+    <div className="screen-enter flex-1 bg-surface">
+      <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-line bg-surface px-8 py-3">
         <Tooltip label="Back to board">
             <Button variant="ghost" size="sm" className="w-8 px-0" aria-label="Back to board" onClick={() => go({ name: 'board', boardId })}>
               <ChevronLeft aria-hidden size={18} strokeWidth={1.75} className="size-[18px] shrink-0" />
@@ -51,7 +51,7 @@ export function ReportView({ boardId, reportId }: { boardId: string; reportId: s
         {/* Locked decisions 5.1: lock what the team took from this report, with the report linked. */}
         <LockDecision
           trigger={<Button size="sm" />}
-          prefill={() => ({ text: report.body.title, reportIds: [report.id] })}
+          prefill={() => ({ text: report.body.decision ?? report.body.title, reportIds: [report.id] })}
           onLocked={(id) => setLocked(useStore.getState().decisions.find((d) => d.id === id)?.text ?? report.body.title)}
           side="bottom"
           align="start"
@@ -72,7 +72,7 @@ export function ReportView({ boardId, reportId }: { boardId: string; reportId: s
           who={report.approvedByName}
           whoColor={report.approvedByColor}
           at={report.approvedAt}
-          edited={Boolean(report.editedAt)}
+          edited={Boolean(report.editedAt || report.body.decision)}
           notes={notes}
           titleId="report-title"
           level="h1"
@@ -83,7 +83,7 @@ export function ReportView({ boardId, reportId }: { boardId: string; reportId: s
         />
         {/* The finished example keeps its scripted chats readable, so the session behind a report can be seen. */}
         {report.approvedBy.startsWith('seed-') && (
-          <div className="flex flex-col items-start gap-2 rounded-md border border-line bg-surface-2/60 px-4 py-4">
+          <div className="flex flex-col items-start gap-2 rounded-md border border-line px-4 py-4">
             <p className="text-[13px] leading-relaxed text-ink-2">
               On the finished example you can read the private chat {report.approvedByName} had with the AI before writing this report.
             </p>

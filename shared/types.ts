@@ -141,10 +141,15 @@ export interface SnapshotChip {
 }
 /** Fixed at the moment the notes were taken, so the canvas context does not drift. */
 export interface Snapshot {
+  reports?: { id: string; body: ReportBody }[];
   problem: string;
   boardTitle: string;
   notes: SnapshotNote[];
   chips: SnapshotChip[];
+  /** Cards explicitly taken into the conversation, as distinct from background notes. */
+  reservedNoteIds?: string[];
+  /** Cards explicitly selected for a chat turn or Agent request, without a reservation. */
+  focusedNotes?: SnapshotNote[];
 }
 
 export interface ChatMessage {
@@ -152,9 +157,14 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   text: string;
   at: number;
+  ideas?: Suggestion[];
 }
 
 export interface Exploration {
+  kind: 'explore' | 'decide';
+  reportIds: string[];
+  decisionDraft?: DecisionDraft;
+  decisionId?: string;
   id: string;
   boardId: string;
   status: 'open' | 'closed';
@@ -170,12 +180,28 @@ export interface Exploration {
   decisions?: import('./decision-schema.ts').Decision[];
 }
 
+export interface DecisionDraft {
+  text: string;
+  reasons: string;
+}
+
+export interface PrivateSession {
+  id: string;
+  kind: Exploration['kind'];
+  title: string;
+  count: number;
+  lastUsedAt: number;
+  status: 'open' | 'draft' | 'locked';
+}
+
 export interface DraftReport {
   id: string;
   explorationId: string;
   status: 'draft' | 'approved';
   body: ReportBody;
   createdAt: number;
+  /** The selected cards at the time the report was generated. */
+  selectedNotes?: SnapshotNote[];
   /** When the author last edited the draft by hand, or null if it is as the AI wrote it. */
   editedAt?: number | null;
 }

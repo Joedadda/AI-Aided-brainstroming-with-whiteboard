@@ -6,14 +6,19 @@ import { coverOf } from '../../shared/decision-schema.ts';
 import type { Card, Section } from '../../shared/types.ts';
 import { board } from '../lib/board.ts';
 import { checkLargeIdea, acceptLargeIdea } from '../lib/features.ts';
+import { openPrivateCanvas, useCanvasLaunchBusy } from '../lib/private-canvas.ts';
 import { useProfile } from '../lib/profile.ts';
 import { go } from '../lib/router.ts';
+import { api } from '../lib/api.ts';
+import { refreshSessions } from '../lib/sessions.ts';
 import { DecisionCard } from '../screens/DecisionCard.tsx';
 import { useStore } from '../store.ts';
 import { Badge } from '../ui/Badge.tsx';
 import { Button } from '../ui/Button.tsx';
 import { cx } from '../ui/cx.ts';
 import { LockDecision, LockGlyph, LockedPill } from './LockPanel.tsx';
+import { ProblemField } from './ProblemField.tsx';
+import { StarterContext } from './StarterContext.tsx';
 
 /** Private-exploration lock (Lucide). Size comes from the class, as before. */
 export function LockIcon({ className = 'size-3.5' }: { className?: string }) {
@@ -23,7 +28,7 @@ export function LockIcon({ className = 'size-3.5' }: { className?: string }) {
 // ---------- Sticky ----------
 
 const reservedLabel = (card: Card, me: string | undefined) =>
-  card.reservedBy === me ? 'You are exploring this note in your private canvas' : `${card.reservedByName ?? 'Someone'} is exploring this note in a private canvas`;
+  card.reservedBy === me ? 'You are exploring this in a private canvas' : `${card.reservedByName ?? 'Someone'} is exploring this in a private canvas`;
 
 export type StickyNodeData = { card: Card };
 export type StickyNodeType = Node<StickyNodeData, 'sticky'>;
@@ -93,8 +98,6 @@ export function StickyNode({ data, id }: NodeProps<StickyNodeType>) {
     }
     // Meeting notes are short on purpose (at most 200 characters): no "Turn into a section?" for them.
     if (card.authorId === me && card.source !== 'meeting') checkLargeIdea(id, t);
-    // Give focus back to the note itself, not the page, so keyboard users keep their place.
-    requestAnimationFrame(() => document.querySelector<HTMLElement>(`.react-flow__node[data-id="${id}"]`)?.focus());
   };
 
   const ring = highlighted ? 'var(--color-ai)' : selectedBy[0]?.color;
@@ -103,7 +106,7 @@ export function StickyNode({ data, id }: NodeProps<StickyNodeType>) {
     <div
       className="sticky-note"
       data-color={card.color}
-      style={{ ['--tilt' as string]: `${tiltFor(id)}deg`, width: card.w, height: card.h }}
+      style={{ ['--tilt' as string]: `${tiltFor(id)}deg`, width: card.w, minHeight: card.h }}
       onDoubleClick={() => useStore.setState({ editingId: id })}
     >
       {selectedBy.length > 0 && !highlighted && (
@@ -114,63 +117,53 @@ export function StickyNode({ data, id }: NodeProps<StickyNodeType>) {
           {selectedBy.map((p) => p.name).join(', ')}
         </span>
       )}
-      <div className="paper" style={ring ? { outline: `2px solid ${ring}`, outlineOffset: 3 } : undefined}>
-        {card.origin === 'ai' && (
-          <span className="absolute top-1 right-2">
-            <Badge tone="ai">AI</Badge>
-          </span>
-        )}
-        {editing ? (
-          <textarea
-            ref={ref}
-            aria-label="Sticky note text"
-            value={draft}
-            onChange={(e) => {
-              setDraft(e.target.value);
-              board.setText(id, e.target.value);
-            }}
-            onBlur={commit}
-            onKeyDown={(e) => {
-              e.stopPropagation(); // keep Backspace and arrows away from the canvas
-              if (e.key === 'Escape' || (e.key === 'Enter' && !e.shiftKey)) {
-                e.preventDefault();
-                ref.current?.blur();
-              }
-            }}
-            placeholder="Type an idea, a fact or a question"
-            className="nodrag nowheel h-full w-full resize-none bg-transparent text-[15px] leading-snug text-ink outline-none placeholder:text-ink-2 focus-visible:outline-none"
-          />
-        ) : (
-          <p
-            className={cx('line-clamp-6 text-[15px] leading-snug text-pretty [overflow-wrap:anywhere]', card.text ? 'text-ink' : 'text-ink-2')}
-            title={card.text.length > 140 ? card.text : undefined}
-          >
-            {card.text || 'Empty note'}
-          </p>
-        )}
+      <div className="paper" style={{ ...(ring ? { outline: `2px solid ${ring}`, outlineOffset: 3 } : {}), paddingTop: card.reservedBy || card.source === 'meeting' || lockedBy ? 6 : undefined }}>
         {(card.reservedBy || card.source === 'meeting' || lockedBy) && (
-          <div className="absolute top-1 left-2 z-10 flex items-center gap-1.5">
-            {lockedBy && (
-              <span className="nodrag">
-                <LockedPill d={lockedBy} />
-              </span>
-            )}
+          <div className="relative z-10 flex flex-wrap items-center gap-1.5">
+            {lockedBy && <span className="nodrag"><LockedPill d={lockedBy} /></span>}
             {card.reservedBy && (
-              // MP-5: the note is in someone's private canvas. The icon alone; the name is in the tooltip.
-              <span
-                role="img"
-                aria-label={reservedLabel(card, me)}
-                title={reservedLabel(card, me)}
-                className="note-ink flex size-5 items-center justify-center"
-              >
+              <span role="img" aria-label={reservedLabel(card, me)} title={reservedLabel(card, me)} className="note-ink flex size-5 items-center justify-center">
                 <LockIcon className="size-3.5" />
               </span>
             )}
             {card.source === 'meeting' && <MeetingMark card={card} />}
           </div>
         )}
+        {editing ? (
+          <div className="sticky-copy relative">
+            {/* Match the editor's wrapping and keep a final blank line measurable. */}
+            <div aria-hidden className="invisible">{draft ? `${draft}\u200b` : 'Type an idea, a fact or a question'}</div>
+            <textarea
+              ref={ref}
+              aria-label="Sticky note text"
+              value={draft}
+              onChange={(e) => {
+                setDraft(e.target.value);
+                board.setText(id, e.target.value);
+              }}
+              onBlur={commit}
+              onKeyDown={(e) => {
+                e.stopPropagation(); // keep Backspace and arrows away from the canvas
+                if (e.key === 'Escape' || (e.key === 'Enter' && !e.shiftKey)) {
+                  e.preventDefault();
+                  ref.current?.blur();
+                  // Keyboard exits return focus to the note. Pointer exits keep their new target.
+                  requestAnimationFrame(() => document.querySelector<HTMLElement>(`.react-flow__node[data-id="${id}"]`)?.focus());
+                }
+              }}
+              placeholder="Type an idea, a fact or a question"
+              className="sticky-copy nodrag absolute inset-0 size-full resize-none overflow-hidden bg-transparent text-ink outline-none placeholder:text-ink-2 focus-visible:outline-none"
+            />
+          </div>
+        ) : (
+          <p
+            className={cx('sticky-copy', card.text ? 'text-ink' : 'text-ink-2')}
+          >
+            {card.text || 'Empty note'}
+          </p>
+        )}
         {/* WB-4: author name in a darker shade of the note colour, so it reads as part of the note. */}
-        <span className="note-ink truncate text-[12px] font-medium">{card.origin === 'ai' ? `${card.author}, from AI` : card.author}</span>
+        <span className="note-ink truncate text-[12px] font-medium">{card.origin === 'ai' ? 'AI' : card.author}</span>
       </div>
       {large && card.authorId === me && (
         <div className="nodrag absolute -bottom-12 left-0 z-10 flex items-center gap-1 rounded-[11px] border border-ai-line bg-ai-bg p-1 pl-2.5 shadow-card">
@@ -288,6 +281,7 @@ export type SectionNodeData = { section: Section; memberIds: string[] };
 export type SectionNodeType = Node<SectionNodeData, 'section'>;
 
 export function SectionNode({ data, id, selected }: NodeProps<SectionNodeType>) {
+  const canvasLaunchBusy = useCanvasLaunchBusy();
   const { section, memberIds } = data;
   const cover = useStore((s) => coverOf(s.decisions, id));
   const [renaming, setRenaming] = useState(false);
@@ -344,7 +338,6 @@ export function SectionNode({ data, id, selected }: NodeProps<SectionNodeType>) 
                 {section.title}
               </button>
             )}
-            {section.titleSource === 'ai' && !renaming && <Badge tone="ai">AI title</Badge>}
             {/* Locked decisions 6.1: a section covered by a decision in force carries the Locked pill. */}
             {cover && !renaming && <LockedPill d={cover} />}
           </span>
@@ -371,7 +364,7 @@ export function SectionNode({ data, id, selected }: NodeProps<SectionNodeType>) 
                 <LockGlyph className="size-4" />
               </LockDecision>
             )}
-            <Button variant="ai" size="sm" className="nodrag" disabled={memberIds.length === 0} onClick={() => void takeNotes(memberIds)}>
+            <Button variant="ai" size="sm" className="nodrag" disabled={memberIds.length === 0 || canvasLaunchBusy} onClick={() => void takeNotes(memberIds)}>
               Take section with you
               <span className="tabular-nums opacity-80">{memberIds.length}</span>
             </Button>
@@ -388,15 +381,7 @@ export async function takeNotes(ids: string[], fromOpinionId?: string) {
   const boardId = s.boardId;
   const pick = s.cards.filter((c) => ids.includes(c.id) && c.text.trim()).map((c) => c.id);
   if (!boardId || !pick.length) return;
-  const { api } = await import('../lib/api.ts');
-  try {
-    const { explorationId, noteIds } = await api.createExploration(boardId, pick, fromOpinionId);
-    board.reserve(noteIds, true);
-    useStore.setState({ selected: [] });
-    go({ name: 'canvas', boardId, explorationId });
-  } catch (e) {
-    alert(e instanceof Error ? e.message : 'Could not open a private canvas.');
-  }
+  await openPrivateCanvas(boardId, pick, { fromOpinionId });
 }
 
 // ---------- Reports ----------
@@ -410,12 +395,36 @@ export function ReportsNode() {
   const read = useProfile((s) => s.read);
   const me = useProfile((s) => s.profile?.userId);
   const approved = [...reports].reverse();
+  const [ticked, setTicked] = useState<string[]>([]);
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState('');
+  const reportIds = ticked.filter((id) => reports.some((report) => report.id === id));
+  const startDecision = async (reviewReport: boolean) => {
+    setStarting(true);
+    setError('');
+    try {
+      const { explorationId } = await api.startDecision(boardId, reportIds);
+      void refreshSessions(boardId);
+      go({ name: 'canvas', boardId, explorationId, reviewReport });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not start the session.');
+    } finally {
+      setStarting(false);
+    }
+  };
 
   return (
-    <section aria-labelledby="reports-heading" className="w-[360px] rounded-[14px] border border-line bg-surface/70 p-3 shadow-card">
+    <section key={boardId} aria-labelledby="reports-heading" className="w-[360px] rounded-[14px] border border-line bg-surface/70 p-3 shadow-card">
       <h2 id="reports-heading" className="mb-3 flex h-8 items-center gap-2 px-1 text-[14px] font-semibold">
         Reports <span className="font-normal text-ink-3 tabular-nums">{approved.length}</span>
       </h2>
+      {reportIds.length > 0 && (
+        <div className="nodrag mb-3 flex gap-2">
+          <Button size="sm" variant="primary" disabled={starting} onClick={() => void startDecision(false)}>Talk it through</Button>
+          <Button size="sm" disabled={starting} onClick={() => void startDecision(true)}>Draft now</Button>
+        </div>
+      )}
+      {error && <p role="alert" className="mb-2 text-[13px] text-danger">{error}</p>}
       {approved.length === 0 && (
         <p className="rounded-md border border-dashed border-line-strong px-4 py-5 text-[13px] leading-relaxed text-ink-2">
           No reports yet. Take notes into a private canvas, explore them with the AI, and approve a report. It lands here with your name on it.
@@ -423,7 +432,18 @@ export function ReportsNode() {
       )}
       <ul className="flex flex-col gap-3">
         {approved.map((r) => (
-          <li key={r.id}>
+          <li key={r.id} className="relative">
+            <input
+              type="checkbox"
+              aria-label={`Select report ${r.body.title}`}
+              checked={reportIds.includes(r.id)}
+              disabled={starting || (reportIds.length >= 20 && !reportIds.includes(r.id))}
+              onChange={(e) => {
+                const checked = e.target.checked;
+                setTicked((ids) => checked ? [...ids, r.id] : ids.filter((id) => id !== r.id));
+              }}
+              className="nodrag absolute start-4 top-4 z-10 size-4 accent-accent"
+            />
             <button
               type="button"
               onClick={() => {
@@ -435,7 +455,7 @@ export function ReportsNode() {
                 justLanded === r.id && 'just-landed',
               )}
             >
-              <span className="flex items-center gap-2">
+              <span className="flex items-center gap-2 ps-6">
                 {!read.includes(r.id) && r.approvedBy !== me && <Badge>New</Badge>}
                 <span className="ml-auto text-[12px] text-ink-3">
                   {r.cardNoteIds.length} {r.cardNoteIds.length === 1 ? 'note' : 'notes'}
@@ -470,7 +490,30 @@ export function DecisionNode() {
   );
 }
 
+function ProblemNode({ selected }: NodeProps) {
+  const boardId = useStore((s) => s.boardId);
+  const kind = useStore((s) => s.meta.kind);
+  const viewer = useProfile((s) => s.profile?.userId);
+  return (
+    <>
+      <div className="relative">
+        <ProblemField />
+        {selected && (
+          <div aria-hidden className="problem-card-selection">
+            <span className="top-0 left-0" />
+            <span className="top-0 left-full" />
+            <span className="top-full left-0" />
+            <span className="top-full left-full" />
+          </div>
+        )}
+      </div>
+      {kind === 'blank' && boardId && viewer && <StarterContext key={`${viewer}:${boardId}`} storageKey={`starter-context:${viewer}:${boardId}`} />}
+    </>
+  );
+}
+
 export const nodeTypes = {
+  problem: ProblemNode,
   sticky: StickyNode,
   section: SectionNode,
   reports: ReportsNode,
