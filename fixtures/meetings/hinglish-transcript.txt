@@ -1,0 +1,95 @@
+Priya: Okay, chalo shuru karein. Everyone's here? Rohan, Meenal, Vikram. Good. So the reason I called this — we all know the lunch problem is getting worse. Last week alone, three offices cancelled their weekly subscription. Three. That's not chump change.
+
+Vikram: Actually four, Priya. One more came in yesterday. The DLF Cyber City one, remember the big account? They said their chai arrives at 2:45 when lunch break is over at 2:30. So people are just... not ordering anymore.
+
+Priya: Four. Wah. Okay. So the problem is not demand, right? Demand is fine. The problem is — orders are coming late.
+
+Meenal: Late, and also wrong sometimes. But mainly late. I was on support calls all of last week, and I'll tell you what the office admins keep saying — "hum order 12:15 pe karte hain, khaana 1:40 pe aata hai." The stall owner gets the order, but he's got fifteen other orders on his phone plus walk-in customers, and our order just sits there.
+
+Rohan: From the tech side, I want to add something. The stall owners are not ignoring the order. They literally don't see it. Their phones are full of notifications — WhatsApp, PhonePe sounds, their own family groups — and our app notification is just one more buzz in that noise. We did that user testing at the Nehru Place stalls, remember? Half the time the guy hadn't even opened our app. The order was sitting unaccepted for twenty minutes.
+
+Vikram: And that's the killer. Twenty minutes unaccepted, then twenty minutes to make it, then the delivery boy is stuck in traffic — bam, one hour gone. Office lunch break is thirty minutes. The math doesn't math.
+
+Priya: Okay, so let's not just complain. What do we do? I have some thoughts but I want to hear from you first. Meenal, you're closest to the stalls and the offices. What's actually broken?
+
+Meenal: Honestly? Two things. One, the stall owner needs to see the order without staring at his phone. He's making chai with both hands, he can't keep checking a screen. Two, the offices order in a burst — like forty items in ten minutes at 12:30 — and we send forty separate orders to the stall. Forty! The guy is reading forty notifications while his kettle is boiling over.
+
+Rohan: Wait, forty separate orders? I thought we had cart-level ordering.
+
+Meenal: Cart-level for the office, haan, but on the stall side it's still item by item in the queue. So the stall owner sees "2 chai", "1 samosa", "3 chai" — it's a mess. He can't tell what's one office and what's another.
+
+Priya: That's a product bug basically. We're making the stall owner do the batching in his head. Rohan, can we batch on our side? One office, one time slot, one combined slip?
+
+Rohan: Batching is doable, but there's a catch. If we batch everything, the stall owner makes it all at once, and then chai sits getting cold while he finishes the samosas. So batching helps the reading, but we need a time discipline also. Like — all orders for a slot get batched and sent together, and he makes them together, and the delivery picks up once. That's actually more efficient for him too.
+
+Vikram: Time discipline, yes. I've been thinking about a cutoff. Like, order by 12:00, delivery by 12:45. Order by 12:45, delivery by 1:30. Fixed slots. Because right now people order at 12:50 and expect food at 1:00 and then they're angry at us. Slot system se expectation set ho jaati hai.
+
+Priya: I like the cutoff. Fifteen-minute cutoff before the slot, maybe? So if the slot is 1:00, orders close at 12:45. Gives the stall owner a clean fifteen minutes to prep the batch.
+
+Meenal: Fifteen is tight for big orders. Forty items, one guy, one stove. Maybe twenty for the big offices, fifteen for small ones? Or just — cutoff fifteen minutes, but we tell the office "order by 12:45 for 1:00 delivery" and if they miss it, they get the next slot. No exceptions. The exceptions are what's killing us.
+
+Vikram: No exceptions is right. Sales side, I'll handle the shouting. But I'll tell you, offices will push back. "Arre yaar, humein aaj late ho gaya, adjust kar do." We have to hold the line, warna system ka matlab hi nahi.
+
+Priya: Hold the line, agreed. Now — the notification problem. Rohan, the bell sound idea you mentioned?
+
+Rohan: Yeah. So right now the stall owner's phone buzzes like everything else. What if we give him a distinct loud bell — like a temple bell or a pressure cooker whistle, something he can't miss — and it keeps ringing until he taps accept? Like an alarm, not a notification. And we print a slip also. Actually, Meenal, you said he can't look at the phone — so the printed slip might be the real answer.
+
+Meenal: Printed slip is the real answer. Small thermal printer, hundred rupees a day for paper, and the slip comes out with the whole batch — office name, items, slot time, all in big bold Hindi and English. He sticks it near the stove. No phone needed.
+
+Priya: Cost?
+
+Meenal: Printer is like two thousand rupees one time, paper rolls are cheap. If we give it free to the top twenty stalls, that's forty thousand. Honestly worth it if it stops the cancellations.
+
+Vikram: Forty thousand is nothing compared to four offices churning. Do it.
+
+Priya: Okay, but let's not boil the ocean. We test first. Two stalls in Nehru Place — the one near the metro station and the one behind the market. Both have the printer, both have the bell, both get batching and the fifteen-minute cutoff. Two weeks. We measure — late orders, cancellations, stall owner feedback.
+
+Rohan: Two weeks is enough to see the trend. I'll need to build batching and the bell this week. The printer integration — I'll do a simple version, just a text slip, no fancy formatting. Can we get the printers by Friday?
+
+Meenal: I'll order them today. Local supplier in Lajpat Nagar, he delivers in two days.
+
+Priya: Good. One more thing — paying the stalls faster. Vikram, what's the situation there?
+
+Vikram: This is actually a bigger pain than people think. We pay stalls weekly, right? But the stall owner has already paid for the milk and the gas that day. So when our payment comes seven days later, he's short on cash, and guess whose order gets made last? Ours. The office order is big but the payment is slow, so mentally he prioritizes the walk-in customer who pays cash on the spot.
+
+Priya: So we're literally incentivizing him to deprioritize us.
+
+Vikram: Exactly. If we paid daily, or even every two days, our orders jump the queue in his head. Cash flow is king for these guys.
+
+Meenal: Daily settlement is possible but operations-heavy. Every two days is a good middle. We already have the payment data.
+
+Priya: Let's do every two days for the pilot stalls, see if it changes behaviour. Rohan, is settlement automation a big lift?
+
+Rohan: The payout API is already there, it's mostly a cron job and some reconciliation. Two days of work, maybe three.
+
+Priya: Okay. So to summarize — pilot at two Nehru Place stalls. Batching on our side, one combined slip per office per slot. Printed slip plus bell alarm on the stall side. Fifteen-minute cutoff before each slot, no exceptions. Payments every two days for pilot stalls. Two weeks, then we review. Questions?
+
+Vikram: One — what about the delivery boy? If we batch, does he pick up one big bag instead of running back and forth? Because right now he's doing three trips and that's also adding time.
+
+Priya: Good point. Rohan, batching should include pickup — one pickup per batch.
+
+Rohan: Noted. One pickup per batch, one delivery per office.
+
+Meenal: And what if the stall owner still misses the bell? He's in the back, or the printer is out of paper?
+
+Priya: That's an open question. Let's say — if he doesn't accept within five minutes, it escalates to a phone call from our ops. Meenal, your team can do that for the pilot, it's only two stalls.
+
+Meenal: Fine, but only for the pilot. We can't do phone calls at scale.
+
+Rohan: Also — what happens to orders that come in after the cutoff? Do we just reject them, or push to next slot automatically?
+
+Priya: Push to next slot, but show the office clearly — "aapka order 1:30 slot mein chala gaya." No silent rejection. That's a support ticket waiting to happen.
+
+Vikram: And pricing? Do we charge the office for the printer? No, right?
+
+Priya: No, free for pilot stalls. We'll figure out monetization later. Right now we're buying trust.
+
+Rohan: Last thing — the bell sound. Should it be the same for all stalls or customizable? Some guys might find a temple bell offensive, some might like it.
+
+Meenal: Let them choose from three sounds. Simple.
+
+Priya: Done. Three sounds, default is the loudest one. Okay, action items — Rohan, batching plus bell plus slip integration by next Wednesday. Meenal, printers ordered today, and ops escalation for pilot stalls. Vikram, tell the two Nehru Place stalls and the affected offices about the new slots, and hold the no-exceptions line. I'll do the review in two weeks. Anything else?
+
+Vikram: Just — if this works, we should do Saket next. There are like six offices there ready to sign.
+
+Priya: One thing at a time, Vikram. Nehru Place first. Chalo, done.

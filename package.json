@@ -1,0 +1,49 @@
+{
+  "name": "split-explore-merge",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -n web,api -c blue,green \"vite\" \"tsx watch --ignore ./data/** server/index.ts\"",
+    "dev:web": "vite",
+    "dev:api": "tsx watch server/index.ts",
+    "build": "tsc -b && vite build",
+    "typecheck": "tsc -b --noEmit",
+    "check:models": "tsx server/check-models.ts",
+    "test": "tsx --test server/meeting/segment.test.ts server/meeting/draft.test.ts shared/session-layout.test.ts server/agent/checks.test.ts",
+    "check:meeting": "tsx server/check-meeting.ts",
+    "check:boards": "tsx server/check-boards.ts",
+    "check:agent": "tsx server/check-agent.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.12.0",
+    "@base-ui/react": "^1.9.0",
+    "@hocuspocus/provider": "^4.9.0",
+    "@hocuspocus/server": "^4.9.0",
+    "@xyflow/react": "^13.0.3",
+    "dotenv": "^18.0.10",
+    "express": "^5.3.0",
+    "lucide-react": "^1.79.0",
+    "motion": "^14.14.0",
+    "nanoid": "^6.0.2",
+    "openai": "^7.63.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "yjs": "^13.6.33",
+    "zod": "^4.6.7",
+    "zustand": "^5.1.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.5",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "concurrently": "^10.0.7",
+    "tailwindcss": "^4.3.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8"
+  }
+}

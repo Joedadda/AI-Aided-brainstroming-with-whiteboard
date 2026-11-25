@@ -1,0 +1,590 @@
+@import 'tailwindcss';
+
+/* keys: only while the keyboard is in use. */
+@custom-variant keys (html[data-keys] &);
+
+/*
+  Design tokens. One place for colour, type, radius and motion.
+  Contrast, measured (WCAG 2.x). Lowest pairing for each text token:
+    ink 15.8:1 on bg; ink-2 6.5:1 on surface-2; ink-3 4.6:1 on surface-2 (4.9 on bg, 5.4 on white);
+    accent 5.4:1 on bg; white on accent 5.9:1; ai 7.3:1 on ai-bg;
+    draft 6.4:1 on draft-bg; approved 5.7:1 on approved-bg; danger 6.1:1 on bg.
+  Never put ink-3 on anything darker than surface-2.
+  8 px grid: Tailwind spacing 1 = 4px, so use even steps (2, 4, 6, 8...).
+*/
+@theme {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+
+  --color-bg: #f6f5f1;
+  --color-surface: #ffffff;
+  --color-surface-2: #efede7;
+  --color-line: #dedbd3;
+  --color-line-strong: #c9c5bb;
+  --color-ink: #1c1b19;
+  --color-ink-2: #57544d;
+  --color-ink-3: #6e6a62;
+
+  --color-accent: #2f5bd3;
+  --color-accent-hover: #2850bd;
+  --color-accent-soft: #e8eefc;
+  /* Selected notes and sections: one step lighter than accent, same hue. 3.7:1 on bg, 4.1:1 on white, 3.3:1 on a yellow note. */
+  --color-selection: #4a78ea;
+
+  /* AI-written text is always on this tint, with an "AI" label. */
+  --color-ai: #4b3fa0;
+  --color-ai-bg: #f1effb;
+  --color-ai-line: #d9d4f3;
+
+  --color-draft: #7a5000;
+  --color-draft-bg: #fff3d6;
+  --color-approved: #1e6b3a;
+  --color-approved-bg: #e3f3e8;
+  --color-danger: #a8321f;
+
+  /* Sticky paper. Text on paper uses ink (12.5:1+) and ink-2 (5.5:1+); never ink-3. */
+  --color-paper-yellow: #ffe993;
+  --color-paper-pink: #ffd0dc;
+  --color-paper-blue: #cfe5ff;
+  --color-paper-green: #cfeec8;
+  --color-dots: #d3cfc5;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+
+  --shadow-card: 0 1px 0 rgb(28 27 25 / 0.04), 0 1px 3px rgb(28 27 25 / 0.06);
+  --shadow-raised: 0 1px 0 rgb(28 27 25 / 0.04), 0 8px 24px -8px rgb(28 27 25 / 0.18);
+  /* The floating toolbar containers: a soft inner shade along the bottom, then the raised drop shadow. */
+  --shadow-tactile:
+    inset 0 1px 1px rgb(255 255 255 / 0.9), inset 0 -2px 4px rgb(28 27 25 / 0.04),
+    0 1px 0 rgb(28 27 25 / 0.04), 0 8px 24px -8px rgb(28 27 25 / 0.18);
+  /* The chosen canvas tool, held down on the accent fill. */
+  --shadow-pressed: inset 0 1px 4px rgb(12 24 64 / 0.28), inset 0 -1px 1px rgb(255 255 255 / 0.1);
+
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+}
+
+html {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-feature-settings: 'cv11', 'ss01';
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  min-width: 1024px;
+  margin: 0;
+  background: var(--color-bg);
+}
+
+/* One focus style everywhere: a ring only while the keyboard is in use (html[data-keys], set by Tab
+   and cleared by any pointer press, see main.tsx). :focus-visible alone is not enough: browsers match
+   it on every clicked text box and on focus moved by script after a click (user, 25 Nov).
+   tabindex="-1" targets (headings that receive focus on route change) are not
+   controls, so they get no ring.
+   Must live in @layer base: unlayered CSS beats every Tailwind utility, which
+   stopped `focus-visible:outline-none` from working on wrapped text boxes. */
+@layer base {
+  :focus-visible {
+    outline: none;
+  }
+  html[data-keys] :where(button, a, input, textarea, [tabindex]:not([tabindex='-1'])):focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+}
+
+::selection {
+  background: var(--color-accent-soft);
+}
+
+/* Press feedback for anything pressable: it travels down 1px, and goes down faster than it comes back. */
+.pressable {
+  transition:
+    transform 160ms var(--ease-out),
+    background-color 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    opacity 150ms ease;
+}
+.pressable:active:not(:disabled, [data-disabled]) {
+  transform: translateY(1px) scale(0.98);
+  transition-duration: 60ms;
+}
+
+/*
+  Tactile buttons. Subtle on purpose (user feedback, 25 Nov): soft, blurred, low-opacity inner
+  shadows, no hard lips or rings. At rest a faint shade sits inside the bottom edge; pressed, it
+  moves to the top edge and the drop shadow goes, so the button sits below the surface.
+  Only for buttons that do or open something. Not for headings, labels or renaming.
+    key         light or bordered buttons
+    key-accent  on the blue fill
+    key-ai      on the purple AI tint
+    key-tint    on a coloured fill (note and profile colours, "From meeting")
+    key-dark    on the dark toasts
+    key-quiet   no fill: flat at rest, soft key on hover, sinks when pressed
+    key-latch   stays down while its panel is open
+  Unlayered on purpose, so these win over Tailwind's shadow utilities. Do not add shadow-* or
+  ring-* to a key; use outline for a selected mark.
+  Each shadow list is inset, inset, drop in both states, so the press can animate.
+*/
+:root {
+  --key: inset 0 1px 1px rgb(255 255 255 / 0.9), inset 0 -2px 4px rgb(28 27 25 / 0.05), 0 1px 2px rgb(28 27 25 / 0.05);
+  --key-down: inset 0 1px 4px rgb(28 27 25 / 0.11), inset 0 -1px 1px rgb(255 255 255 / 0.6), 0 0 0 rgb(28 27 25 / 0);
+  --key-accent: inset 0 1px 1px rgb(255 255 255 / 0.14), inset 0 -2px 4px rgb(12 24 64 / 0.18), 0 1px 2px rgb(12 24 64 / 0.12);
+  --key-accent-down: inset 0 1px 4px rgb(12 24 64 / 0.3), inset 0 -1px 1px rgb(255 255 255 / 0.08), 0 0 0 rgb(12 24 64 / 0);
+  --key-ai: inset 0 1px 1px rgb(255 255 255 / 0.8), inset 0 -2px 4px rgb(75 63 160 / 0.08), 0 1px 2px rgb(75 63 160 / 0.06);
+  --key-ai-down: inset 0 1px 4px rgb(75 63 160 / 0.18), inset 0 -1px 1px rgb(255 255 255 / 0.6), 0 0 0 rgb(75 63 160 / 0);
+  --key-tint: inset 0 1px 1px rgb(255 255 255 / 0.3), inset 0 -2px 4px rgb(0 0 0 / 0.08), 0 1px 2px rgb(28 27 25 / 0.06);
+  --key-tint-down: inset 0 1px 4px rgb(0 0 0 / 0.16), inset 0 -1px 1px rgb(255 255 255 / 0.2), 0 0 0 rgb(0 0 0 / 0);
+  --key-dark: inset 0 1px 1px rgb(255 255 255 / 0.1), inset 0 -2px 4px rgb(0 0 0 / 0.2), 0 1px 2px rgb(0 0 0 / 0.2);
+  --key-dark-down: inset 0 1px 4px rgb(0 0 0 / 0.4), inset 0 -1px 1px rgb(255 255 255 / 0.06), 0 0 0 rgb(0 0 0 / 0);
+}
+.key { box-shadow: var(--key); }
+.key-accent { box-shadow: var(--key-accent); }
+.key-ai { box-shadow: var(--key-ai); }
+.key-tint { box-shadow: var(--key-tint); }
+.key-dark { box-shadow: var(--key-dark); }
+@media (hover: hover) {
+  .key-quiet:hover:not(:disabled, [data-disabled], [data-pressed]) { box-shadow: var(--key); }
+  .key-quiet.key-dark-quiet:hover { box-shadow: var(--key-dark); }
+}
+
+/* Pushed down: while held, and while the button's own pop-up is open. */
+.key:is(:active, [data-popup-open]):not(:disabled, [data-disabled]),
+.key-quiet:is(:active, [data-popup-open]):not(:disabled, [data-disabled]),
+.key-latch[aria-expanded='true'] {
+  box-shadow: var(--key-down);
+}
+.key:active:not(:disabled, [data-disabled]),
+.key-quiet:active:not(:disabled, [data-disabled], [data-pressed]) {
+  background-color: var(--color-surface-2);
+}
+.key-accent:active:not(:disabled, [data-disabled]) {
+  box-shadow: var(--key-accent-down);
+  background-color: var(--color-accent-hover);
+}
+.key-ai:is(:active, [data-popup-open]):not(:disabled, [data-disabled]) { box-shadow: var(--key-ai-down); }
+.key-tint:is(:active, [aria-expanded='true']):not(:disabled) { box-shadow: var(--key-tint-down); }
+.key-dark:active,
+.key-quiet.key-dark-quiet:active {
+  box-shadow: var(--key-dark-down);
+  background-color: rgb(255 255 255 / 0.1);
+}
+/* The chosen canvas tool stays held down. */
+.key-quiet[data-pressed],
+.key-quiet[data-pressed]:active {
+  box-shadow: var(--shadow-pressed);
+}
+
+/* A disabled button is flat: there is nothing to press. */
+:is(.key, .key-accent, .key-ai, .key-tint, .key-quiet):is(:disabled, [data-disabled]) {
+  box-shadow: none;
+}
+
+/* Screen enter: short, only on route change (rare, so it may animate). */
+.screen-enter {
+  animation: screen-in 260ms var(--ease-out) both;
+}
+@keyframes screen-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* New chat message: fades up. Transition-free list, so a keyframe is fine. */
+.msg-enter {
+  animation: msg-in 220ms var(--ease-out) both;
+}
+@keyframes msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* Thinking dots */
+.dots span {
+  animation: dot 1s ease-in-out infinite;
+}
+.dots span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.dots span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes dot {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Base UI popups: origin-aware scale + fade. */
+.popup {
+  transform-origin: var(--transform-origin);
+  transition:
+    transform 150ms var(--ease-out),
+    opacity 150ms var(--ease-out);
+}
+.popup[data-starting-style],
+.popup[data-ending-style] {
+  opacity: 0;
+  transform: scale(0.97);
+}
+.popup[data-instant] {
+  transition-duration: 0ms;
+}
+
+/* Dropdown lists (ui/Select): they drop down from the trigger. Longer and further than .popup,
+   which read as abrupt here (user, 25 Nov). Closing is quicker than opening. */
+.menu-pop {
+  transform-origin: var(--transform-origin);
+  transition:
+    transform 240ms var(--ease-out),
+    opacity 200ms var(--ease-out);
+}
+.menu-pop[data-starting-style],
+.menu-pop[data-ending-style] {
+  opacity: 0;
+  transform: translateY(-8px) scale(0.95);
+}
+.menu-pop[data-ending-style] {
+  transition-duration: 140ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  .menu-pop[data-starting-style],
+  .menu-pop[data-ending-style] {
+    transform: none;
+  }
+}
+
+/* Side sheet: slides in from the right edge, exits a little faster. */
+.sheet {
+  transition: transform 320ms var(--ease-out);
+}
+.sheet[data-starting-style] {
+  transform: translateX(100%);
+}
+.sheet[data-ending-style] {
+  transform: translateX(100%);
+  transition-duration: 220ms;
+}
+
+/* ---------- Canvas ---------- */
+
+.react-flow {
+  --xy-background-color: var(--color-bg);
+  --xy-selection-background-color: rgb(74 120 234 / 0.08);
+  --xy-selection-border: 1px solid rgb(74 120 234 / 0.5);
+}
+.react-flow__attribution {
+  background: transparent;
+  font-size: 10px;
+}
+/*
+  The app is light only. React Flow sets "light dark", which let a dark OS theme paint dark
+  native scrollbars inside the canvas (the Problem box). Doubled class to win over its stylesheet.
+*/
+.react-flow.react-flow {
+  color-scheme: light;
+}
+
+/* Section bodies pass clicks through (see BoardCanvas); their resize handles must not. */
+.react-flow__resize-control {
+  pointer-events: all;
+}
+
+/*
+  Selected section, as in Figma: a square 2px box in the selection blue with white square
+  handles at the corners. Both keep the same size on screen at any zoom, as in Figma: the lines
+  through --rf-zoom (set by BoardCanvas), the handles through React Flow's own scaling.
+*/
+.react-flow__node-section .react-flow__resize-control.line {
+  border-color: var(--color-selection);
+}
+.react-flow__node-section .react-flow__resize-control.line.left,
+.react-flow__node-section .react-flow__resize-control.line.right {
+  width: calc(2px / var(--rf-zoom, 1));
+  border-left-width: calc(2px / var(--rf-zoom, 1));
+  border-right-width: 0;
+}
+.react-flow__node-section .react-flow__resize-control.line.top,
+.react-flow__node-section .react-flow__resize-control.line.bottom {
+  height: calc(2px / var(--rf-zoom, 1));
+  border-top-width: calc(2px / var(--rf-zoom, 1));
+  border-bottom-width: 0;
+}
+/* React Flow already counter-scales handles (inline `scale`), so these are screen sizes. */
+.react-flow__node-section .react-flow__resize-control.handle {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--color-selection);
+  border-radius: 3px;
+  background: #fff;
+}
+
+/* React Flow nodes are focusable wrappers: give them our ring, not theirs. */
+html[data-keys] .react-flow__node:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+/*
+  Sticky note. Three layers so the curl shadow can sit *behind* the paper:
+  .sticky-note (tilt, stacking context) > ::before (curl shadow, z -1) > .paper.
+*/
+.sticky-note {
+  position: relative;
+  width: 200px;
+  height: 200px;
+  transform: rotate(var(--tilt, 0deg));
+  transition: transform 220ms var(--ease-out);
+  isolation: isolate;
+}
+.sticky-note::before {
+  /* The lifted bottom-right corner casts a longer, softer shadow. */
+  content: '';
+  position: absolute;
+  z-index: -1;
+  right: 10px;
+  bottom: 8px;
+  width: 55%;
+  height: 24%;
+  box-shadow: 0 14px 12px rgb(28 27 25 / 0.2);
+  transform: rotate(4deg) skewX(10deg);
+  transition: box-shadow 220ms var(--ease-out);
+}
+.paper {
+  position: relative;
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 26px 18px 14px;
+  background: linear-gradient(
+    172deg,
+    var(--paper) 0%,
+    var(--paper) 62%,
+    color-mix(in oklab, var(--paper), #000 5%) 100%
+  );
+  border-radius: 2px 2px 2px 2px / 2px 2px 2px 2px;
+  border-bottom-right-radius: 36px 5px;
+  box-shadow:
+    0 1px 1px rgb(28 27 25 / 0.08),
+    0 3px 6px -2px rgb(28 27 25 / 0.12);
+  /* Forced-colours mode drops shadows: keep an edge. */
+  border: 1px solid transparent;
+}
+.paper::before {
+  /* The adhesive strip: a slightly denser band along the top. */
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 18px;
+  background: rgb(28 27 25 / 0.035);
+  border-radius: 2px 2px 0 0;
+}
+.sticky-note[data-color='yellow'] { --paper: var(--color-paper-yellow); }
+.sticky-note[data-color='pink'] { --paper: var(--color-paper-pink); }
+.sticky-note[data-color='blue'] { --paper: var(--color-paper-blue); }
+.sticky-note[data-color='green'] { --paper: var(--color-paper-green); }
+/* Author name and lock: a dark, more saturated shade of the note's own colour.
+   Measured 6.5:1 to 7.1:1 on the four papers. The first line is for browsers without relative colours. */
+.note-ink {
+  color: color-mix(in oklab, var(--paper), #000 62%);
+  color: oklch(from var(--paper) calc(l - 0.5) calc(c * 1.8) h);
+}
+
+/* Picked up: straighten and cast a deeper shadow. No size change (user decision, 24 Nov). */
+.react-flow__node.dragging .sticky-note {
+  transform: rotate(0deg);
+}
+.react-flow__node.dragging .sticky-note::before {
+  box-shadow: 0 26px 18px rgb(28 27 25 / 0.22);
+}
+.react-flow__node.selected .sticky-note .paper {
+  outline: 2px solid var(--color-selection);
+  outline-offset: 3px;
+}
+@media (hover: hover) {
+  .react-flow__node:not(.dragging) .sticky-note:hover {
+    transform: rotate(var(--tilt, 0deg)) translateY(-1px);
+  }
+}
+
+.swatch {
+  background: var(--paper);
+}
+.swatch[data-color='yellow'] { --paper: var(--color-paper-yellow); }
+.swatch[data-color='pink'] { --paper: var(--color-paper-pink); }
+.swatch[data-color='blue'] { --paper: var(--color-paper-blue); }
+.swatch[data-color='green'] { --paper: var(--color-paper-green); }
+
+/* Accordion panels: Base UI measures the height for us. */
+.accordion-panel {
+  height: var(--accordion-panel-height);
+  overflow: hidden;
+  transition: height 220ms var(--ease-out);
+}
+.accordion-panel[data-starting-style],
+.accordion-panel[data-ending-style] {
+  height: 0;
+}
+.accordion-chevron {
+  transition: transform 200ms var(--ease-out);
+}
+[data-panel-open] > .accordion-chevron {
+  transform: rotate(90deg);
+}
+
+/* Report that just landed on the board: one soft pulse of the border. */
+.just-landed {
+  animation: landed 1600ms var(--ease-out) backwards;
+}
+@keyframes landed {
+  0% {
+    box-shadow: 0 0 0 0 rgb(30 107 58 / 0.35);
+    transform: translateY(-4px);
+    opacity: 0;
+  }
+  20% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  100% {
+    box-shadow: 0 0 0 8px rgb(30 107 58 / 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .accordion-panel,
+  .accordion-chevron,
+  .sticky-note,
+  .sticky-note::before {
+    transition: none;
+  }
+  .react-flow__node.dragging .sticky-note {
+    transform: rotate(var(--tilt, 0deg));
+  }
+  .sheet,
+  .sheet[data-starting-style],
+  .sheet[data-ending-style] {
+    transform: none;
+    transition: opacity 160ms ease;
+  }
+  .sheet[data-starting-style],
+  .sheet[data-ending-style] {
+    opacity: 0;
+  }
+  .just-landed {
+    animation: fade 200ms ease both;
+  }
+  .screen-enter,
+  .msg-enter {
+    animation: fade 160ms ease both;
+  }
+  .pressable:active:not(:disabled, [data-disabled]) {
+    transform: none;
+  }
+  .popup[data-starting-style],
+  .popup[data-ending-style] {
+    transform: none;
+  }
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Board panels pop up from the toolbar, as Figma's toolbar menus do. Opacity only under reduced motion. */
+.dock-pop {
+  transform-origin: 50% 100%;
+  transition: opacity 150ms cubic-bezier(0.23, 1, 0.32, 1);
+  @starting-style {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .dock-pop {
+    transition:
+      opacity 150ms cubic-bezier(0.23, 1, 0.32, 1),
+      scale 150ms cubic-bezier(0.23, 1, 0.32, 1);
+    @starting-style {
+      opacity: 0;
+      scale: 0.96;
+    }
+  }
+}
+
+/*
+  Active toolbar icons switch to a filled state (pressed tool, open panel).
+  icon-fill: a plain fill. icon-cut: filled, with inner lines cut out in the button's blue so
+  detail survives (finger gaps, the section tab, text lines). icon-bold: a single wire like the
+  paperclip cannot be filled, so it gets a heavier stroke instead.
+*/
+:is([data-pressed], [aria-expanded='true']) > :is(.icon-fill, .icon-cut) {
+  fill: currentColor;
+}
+:is([data-pressed], [aria-expanded='true']) > .icon-cut {
+  stroke: var(--color-accent);
+}
+:is([data-pressed], [aria-expanded='true']) > .icon-bold {
+  stroke-width: 2.25;
+}
+
+/*
+  The AI is naming the board: a soft purple sweep across the title field and its "Naming this
+  board…" text. Background-position only on a small element, so it stays cheap. Reduced motion
+  keeps the colours and drops the movement.
+*/
+@keyframes ai-sweep {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+.ai-naming {
+  min-width: 190px;
+  background: linear-gradient(100deg, var(--color-ai-bg) 25%, color-mix(in oklab, var(--color-ai-line), white 35%) 50%, var(--color-ai-bg) 75%);
+  background-size: 200% 100%;
+  animation: ai-sweep 1.6s linear infinite;
+}
+.ai-naming-text {
+  background: linear-gradient(100deg, var(--color-ai) 35%, color-mix(in oklab, var(--color-ai), white 50%) 50%, var(--color-ai) 65%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: ai-sweep 1.6s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai-naming,
+  .ai-naming-text {
+    animation: none;
+    background-position: 0 0;
+  }
+  .ai-naming-text {
+    background: none;
+    color: var(--color-ai);
+  }
+}
+
+/* Typing suggestions in the AI box (src/canvas/TypingHint.tsx): the caret blinks. */
+@keyframes caret-blink {
+  0%, 45% { opacity: 1; }
+  50%, 95% { opacity: 0; }
+  100% { opacity: 1; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .typing-caret { animation: caret-blink 1s step-end infinite; }
+}
+

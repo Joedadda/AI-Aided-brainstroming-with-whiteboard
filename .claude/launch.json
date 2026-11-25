@@ -1,0 +1,88 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "app",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "port": 5173
+    },
+    {
+      "name": "app-alt",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "port": 5183,
+      "env": {
+        "WEB_PORT": "5183",
+        "API_PORT": "8797",
+        "COLLAB_PORT": "8798"
+      }
+    },
+    {
+      "name": "app-fallback",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "port": 5193,
+      "env": {
+        "WEB_PORT": "5193",
+        "API_PORT": "8807",
+        "COLLAB_PORT": "8808",
+        "AI_FORCE_FALLBACK": "meetingSession,meetingCondense"
+      }
+    },
+    {
+      "name": "build-locked",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "port": 5201,
+      "env": {
+        "WEB_PORT": "5201",
+        "API_PORT": "8811",
+        "COLLAB_PORT": "8812",
+        "DATABASE_PATH": "./data/locked.db"
+      }
+    },
+    {
+      "name": "build-agent",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "port": 5211,
+      "env": {
+        "WEB_PORT": "5211",
+        "API_PORT": "8821",
+        "COLLAB_PORT": "8822",
+        "DATABASE_PATH": "./data/agent.db"
+      }
+    },
+    {
+      "name": "build-demo",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "port": 5221,
+      "env": {
+        "WEB_PORT": "5221",
+        "API_PORT": "8831",
+        "COLLAB_PORT": "8832",
+        "DATABASE_PATH": "./data/demo.db"
+      }
+    }
+  ]
+}

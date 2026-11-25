@@ -1,0 +1,479 @@
+1
+00:00:00,000 --> 00:00:04,000
+Nisha: Okay, I think we're all here. Arjun, you're in?
+
+2
+00:00:04,000 --> 00:00:07,000
+Arjun: Yeah, hi. Sorry, was on the other call.
+
+3
+00:00:07,000 --> 00:00:10,000
+Nisha: No worries. Leela?
+
+4
+00:00:10,000 --> 00:00:12,000
+Leela: Here.
+
+5
+00:00:12,000 --> 00:00:14,000
+Nisha: Tom?
+
+6
+00:00:14,000 --> 00:00:17,000
+Tom: Yep, hello everyone.
+
+7
+00:00:17,000 --> 00:00:19,000
+Nisha: Kiran?
+
+8
+00:00:19,000 --> 00:00:22,000
+Kiran: Hi, present.
+
+9
+00:00:22,000 --> 00:00:38,000
+Nisha: Great. So this is the no-show thing, the plot booking problem. I wanted us to get in a room — well, a call — and actually look at it properly instead of patching it with reminder emails again. Kiran, you had numbers?
+
+10
+00:00:38,000 --> 00:00:55,000
+Kiran: Yeah, let me pull them up. One sec. Okay. So last season, looking at the kharif season bookings, we had about — hold on, sharing my screen — 38 percent of booked plots had no visit recorded in the first month.
+
+11
+00:00:55,000 --> 00:00:57,000
+Tom: Thirty-eight percent.
+
+12
+00:00:57,000 --> 00:01:14,000
+Kiran: Thirty-eight. And that's visits logged through the app, so gate check-ins, photos, that sort of thing. There's some margin there, maybe someone came and didn't log, but honestly, the gate check-in is automatic now, so I don't think it's far off.
+
+13
+00:01:14,000 --> 00:01:18,000
+Nisha: So more than a third of the plots were essentially sitting idle.
+
+14
+00:01:18,000 --> 00:01:29,000
+Kiran: For the first month, yeah. And it gets worse if you look at the whole season. By the end, 44 percent had fewer than three visits total.
+
+15
+00:01:29,000 --> 00:01:31,000
+Arjun: Three visits in a whole season?
+
+16
+00:01:31,000 --> 00:01:36,000
+Kiran: Three visits in a whole season. A season is what, four months?
+
+17
+00:01:36,000 --> 00:01:37,000
+Nisha: Four and a half.
+
+18
+00:01:37,000 --> 00:01:41,000
+Kiran: Four and a half months. So yeah.
+
+19
+00:01:41,000 --> 00:01:55,000
+Tom: That matches what I see. We get the complaints from the other side, the waitlist people. They walk past a plot, it's overgrown, they're on the waitlist for months, and they're — yeah, they're not polite about it.
+
+20
+00:01:55,000 --> 00:01:57,000
+Nisha: How many on the waitlist now?
+
+21
+00:01:57,000 --> 00:02:01,000
+Kiran: Four hundred and twelve as of this morning.
+
+22
+00:02:01,000 --> 00:02:11,000
+Tom: Four twelve. And that's just the ones who signed up through the app. There's a paper list at the Kothrud garden office too, I don't know how many that is.
+
+23
+00:02:11,000 --> 00:02:13,000
+Leela: Wait, there's a paper list?
+
+24
+00:02:13,000 --> 00:02:18,000
+Tom: Oh yeah. The garden secretary keeps one. It's been there since before the app.
+
+25
+00:02:18,000 --> 00:02:21,000
+Leela: So we might have more demand than we even know about.
+
+26
+00:02:21,000 --> 00:02:23,000
+Tom: Almost certainly.
+
+27
+00:02:23,000 --> 00:02:26,000
+Nisha: Okay, and refund requests?
+
+28
+00:02:26,000 --> 00:02:52,000
+Kiran: So this is the interesting bit. Refund requests went up — let me check — 61 this season versus 19 the season before. But most of them aren't from the no-shows. They're from people who booked, paid, and then something came up. Job transfer, travel, whatever. They're asking for refunds because they feel guilty about holding a plot they're not using.
+
+29
+00:02:52,000 --> 00:02:55,000
+Arjun: Wait, they feel guilty so they want a refund?
+
+30
+00:02:55,000 --> 00:03:04,000
+Kiran: Some of them, yeah. The message is usually like, "I'm not able to come, please give my plot to someone on the waitlist." They're trying to do the right thing.
+
+31
+00:03:04,000 --> 00:03:20,000
+Tom: Right, and we don't have a good answer for them. Currently the policy is no refunds after booking closes, so support just says sorry, and then the plot sits there. And the person feels bad, and the waitlist person is still waiting.
+
+32
+00:03:20,000 --> 00:03:25,000
+Nisha: So we're punishing the honest ones and the no-shows just... don't care.
+
+33
+00:03:25,000 --> 00:03:31,000
+Tom: The no-shows don't even reply to emails. We send three reminders, nothing.
+
+34
+00:03:31,000 --> 00:03:42,000
+Leela: Can I just — sorry, quick question. When someone books, do they know they're taking a spot from someone else? Like, is the waitlist visible to them at all?
+
+35
+00:03:42,000 --> 00:03:44,000
+Nisha: Good question. Arjun, is it?
+
+36
+00:03:44,000 --> 00:03:51,000
+Arjun: No. The booking flow doesn't show waitlist numbers. You just pick a plot, pay, done.
+
+37
+00:03:51,000 --> 00:04:00,000
+Leela: Hmm. Because that might matter. If you knew 400 people were waiting, you might think twice before booking a plot you're not sure about.
+
+38
+00:04:00,000 --> 00:04:04,000
+Arjun: Or you might book faster because it feels scarce. Hard to say.
+
+39
+00:04:04,000 --> 00:04:08,000
+Leela: True. Yeah, could go either way.
+
+40
+00:04:08,000 --> 00:04:33,000
+Nisha: Okay, let's park that for a second. Let me frame what I think the actual problem is, and tell me if you disagree. The problem isn't that people book and don't show up. The problem is that plots go to people who won't use them, while people who would use them are stuck on a waitlist. The booking is the moment where the wrong person gets the plot.
+
+41
+00:04:33,000 --> 00:04:35,000
+Tom: Yeah, I'd agree with that.
+
+42
+00:04:35,000 --> 00:04:44,000
+Arjun: Mostly. Though — I mean, some of the no-shows are just people whose plans changed. Life happens. It's not that they're bad actors.
+
+43
+00:04:44,000 --> 00:04:50,000
+Nisha: Sure, agreed. But from the plot's point of view, it doesn't matter why. The plot is empty either way.
+
+44
+00:04:50,000 --> 00:04:52,000
+Arjun: Right, fair.
+
+45
+00:04:52,000 --> 00:05:06,000
+Kiran: Can I add one thing to the framing? The 38 percent isn't evenly spread. It's concentrated. Like, some plots get abandoned way more than others. The ones near the far gate, the ones with poor water access —
+
+46
+00:05:06,000 --> 00:05:08,000
+Nisha: Oh, that's interesting.
+
+47
+00:05:08,000 --> 00:05:17,000
+Kiran: — those have much higher no-show rates. The plots near the main gate and the compost shed are almost always used.
+
+48
+00:05:17,000 --> 00:05:22,000
+Tom: That makes sense. The far plots are a trek, especially in summer.
+
+49
+00:05:22,000 --> 00:05:34,000
+Kiran: And also — this is anecdotal, but — a lot of the no-shows are first-time bookers. People who've never had a plot before. Returning members almost always show up.
+
+50
+00:05:34,000 --> 00:05:37,000
+Leela: So it's partly a first-timer problem.
+
+51
+00:05:37,000 --> 00:05:41,000
+Kiran: Looks like it. I can pull the exact split if that's useful.
+
+52
+00:05:41,000 --> 00:05:49,000
+Nisha: Yes, please, that'd be great. Because if it's first-timers, maybe it's an onboarding thing, not a commitment thing.
+
+53
+00:05:49,000 --> 00:05:56,000
+Arjun: Or it's both. First-timers don't know what they're signing up for. They think it's like booking a hotel room.
+
+54
+00:05:56,000 --> 00:06:05,000
+Tom: We do get that. People ask support "what do I do now" after booking. Like, they've paid and they don't know the next step.
+
+55
+00:06:05,000 --> 00:06:10,000
+Leela: Wait, is there a next step? Like, does the app tell them anything after payment?
+
+56
+00:06:10,000 --> 00:06:15,000
+Arjun: There's a confirmation screen. It says "booking confirmed." That's about it.
+
+57
+00:06:15,000 --> 00:06:16,000
+Leela: That's it?
+
+58
+00:06:16,000 --> 00:06:18,000
+Arjun: There's an FAQ link.
+
+59
+00:06:18,000 --> 00:06:20,000
+Leela: Oh, an FAQ link. Great.
+
+60
+00:06:20,000 --> 00:06:26,000
+Tom: [laughs] The FAQ is four years old, by the way. It still mentions the old watering schedule.
+
+61
+00:06:26,000 --> 00:06:48,000
+Nisha: Okay, so we have a few threads here. One, the allocation is wrong — plots go to people who won't use them. Two, first-timers especially. Three, the far plots are worse. Four, we have no graceful way for someone to give up a plot. Five, the waitlist is invisible and angry. Did I miss anything?
+
+62
+00:06:48,000 --> 00:06:51,000
+Kiran: Refunds. The 61 refund requests.
+
+63
+00:06:51,000 --> 00:06:57,000
+Nisha: Right, refunds. Which is really thread four, the graceful exit. But yeah.
+
+64
+00:06:57,000 --> 00:07:08,000
+Arjun: Can I just say — the refund thing is a policy question, not a product question. Like, we can build whatever, but someone has to decide if we're giving money back.
+
+65
+00:07:08,000 --> 00:07:18,000
+Nisha: Agreed. I'll take that to the garden committee. But even without refunds, we could let people release a plot back to the waitlist. That doesn't cost us anything.
+
+66
+00:07:18,000 --> 00:07:23,000
+Tom: That would help support a lot. Right now I have nothing to offer people.
+
+67
+00:07:23,000 --> 00:07:38,000
+Nisha: Okay. So the question I want us to sit with for the next bit: how do we get plots to the people who will actually use them? Not how do we punish no-shows. How do we match plots to people.
+
+68
+00:07:38,000 --> 00:07:52,000
+Leela: Can I just say, before we go further — I want to make sure we're not designing something that punishes people for having a life. Like, if my mother gets sick and I can't garden for a month, I shouldn't lose my plot forever.
+
+69
+00:07:52,000 --> 00:07:59,000
+Nisha: Totally fair. And I think that's the tension, right? We want commitment, but we don't want to be cruel about it.
+
+70
+00:07:59,000 --> 00:08:03,000
+Tom: Yeah. And the waitlist people aren't cruel either, they're just frustrated.
+
+71
+00:08:03,000 --> 00:08:29,000
+Tom: Okay, so I pulled the tickets from the last six weeks, roughly. I'll summarize. The biggest bucket, no surprise, is waitlisted people. About forty of them. The gist is — they signed up in March, they've heard nothing, they see plots sitting empty, and they're asking what the point of the waitlist even is. One person wrote, and I'm paraphrasing, "I check the app every week and it says I'm position twelve, but twelve hasn't moved since April."
+
+72
+00:08:29,000 --> 00:08:31,000
+Nisha: Twelve not moving since April.
+
+73
+00:08:31,000 --> 00:08:38,000
+Tom: Yeah. And a couple of them have started, like, organizing. There's a WhatsApp group. Someone forwarded me a screenshot.
+
+74
+00:08:38,000 --> 00:08:39,000
+Leela: Oh no.
+
+75
+00:08:39,000 --> 00:08:58,000
+Tom: It's not hostile yet, but it's heading there. Second bucket — members who booked and forgot. Maybe fifteen tickets. "I didn't know the season started." "I thought it auto-renewed." One person asked us to cancel their booking from February and was genuinely surprised it was still theirs.
+
+76
+00:08:58,000 --> 00:09:00,000
+Arjun: Surprised it was still theirs.
+
+77
+00:09:00,000 --> 00:09:16,000
+Tom: Right. And the third bucket is smaller, maybe six or seven — people saying the garden is too far from where they live. They booked it, then realized the commute is forty minutes each way, and now they feel bad but they're not going to go.
+
+78
+00:09:16,000 --> 00:09:26,000
+Kiran: Do we know which garden those are? Because if it's the north one, that's the one near the new flyover construction, right? The access road's been dug up since June.
+
+79
+00:09:26,000 --> 00:09:29,000
+Tom: Two of them mentioned the road, actually. Yeah.
+
+80
+00:09:29,000 --> 00:09:32,000
+Kiran: That's a real factor then. That's not flakiness.
+
+81
+00:09:32,000 --> 00:09:43,000
+Nisha: Noted. Okay, Arjun, walk us through what actually happens today when someone books. Because I suspect the answer is "not much" and I want to be precise about it.
+
+82
+00:09:43,000 --> 00:09:57,000
+Arjun: So — booking flow. Member picks a plot on the map, picks a season, confirms. We send one email. That's it. One email at booking, confirming plot number and season dates.
+
+83
+00:09:57,000 --> 00:10:01,000
+Nisha: And that email, what does it say?
+
+84
+00:10:01,000 --> 00:10:14,000
+Arjun: "You've booked Plot 14 for the kharif season, June to October." Plus a link to the plot page. It's templated. It doesn't mention the start date separately, it's kind of buried in the season range.
+
+85
+00:10:14,000 --> 00:10:22,000
+Leela: So if you booked in February for a June season, the email says June, but you read it in February and then you close it and it's gone.
+
+86
+00:10:22,000 --> 00:10:37,000
+Arjun: Yeah. And then nothing. No reminder before the season starts, no reminder after. Nothing at all until the season ends, when we send a "how was your season" survey. Which, honestly, people who never showed up also get.
+
+87
+00:10:37,000 --> 00:10:38,000
+Tom: Do they fill it in?
+
+88
+00:10:38,000 --> 00:10:42,000
+Arjun: Almost never. The survey response rate is like four percent.
+
+89
+00:10:42,000 --> 00:10:46,000
+Kiran: Four percent. And of that four percent, how many are no-shows?
+
+90
+00:10:46,000 --> 00:10:49,000
+Arjun: I don't — I'd have to check. Probably close to zero, because why would you.
+
+91
+00:10:49,000 --> 00:10:54,000
+Kiran: Right, so we have no signal from the no-shows at all. They just silently lapse.
+
+92
+00:10:54,000 --> 00:10:59,000
+Nisha: And the plot stays booked to them the whole season, so nobody else can use it.
+
+93
+00:10:59,000 --> 00:11:11,000
+Arjun: Correct. The booking holds until the season ends. There's no release mechanism. If you want to give up your plot you have to go into the app and cancel, and most people don't, because they forgot they had it.
+
+94
+00:11:11,000 --> 00:11:15,000
+Leela: So the plot is essentially locked by someone who doesn't know they have it.
+
+95
+00:11:15,000 --> 00:11:17,000
+Arjun: That's a fair summary.
+
+96
+00:11:17,000 --> 00:11:26,000
+Tom: And support can't override it either. I've had people ask me, "can you just give my plot to the next person," and I have to say no, there's no button for that.
+
+97
+00:11:26,000 --> 00:11:27,000
+Nisha: There's no button.
+
+98
+00:11:27,000 --> 00:11:29,000
+Tom: There's no button.
+
+99
+00:11:29,000 --> 00:11:37,000
+Leela: That seems like a quick fix, though. Like, even before we do anything clever, a "release my plot" button that actually works.
+
+100
+00:11:37,000 --> 00:11:46,000
+Arjun: It exists, technically, but it's buried three taps deep and half the people who find it don't complete it because it asks for a reason from a dropdown and the dropdown is weird.
+
+101
+00:11:46,000 --> 00:11:49,000
+Tom: The dropdown is weird. It has "other" but no text box.
+
+102
+00:11:49,000 --> 00:11:50,000
+Arjun: Yeah.
+
+103
+00:11:50,000 --> 00:11:58,000
+Nisha: Okay, park that, that's a small thing. The bigger thing is the reminder gap. One email at booking and then silence for four months.
+
+104
+00:11:58,000 --> 00:12:01,000
+Arjun: Silence for four months, yeah.
+
+105
+00:12:01,000 --> 00:12:13,000
+Kiran: Can I just — sorry, quick tangent. Do we have data on when people book relative to season start? Because if most bookings happen two weeks before, the reminder problem is smaller than we think.
+
+106
+00:12:13,000 --> 00:12:22,000
+Arjun: I looked at this last month, actually. For the current season, about sixty percent of bookings were made more than eight weeks before the season started.
+
+107
+00:12:22,000 --> 00:12:23,000
+Kiran: Sixty percent.
+
+108
+00:12:23,000 --> 00:12:26,000
+Arjun: Yeah. So the gap is real for most of them.
+
+109
+00:12:26,000 --> 00:12:32,000
+Kiran: Okay. That's — yeah, that changes the picture. That's a long time to remember a thing you did once.
+
+110
+00:12:32,000 --> 00:12:35,000
+Nisha: And that matches Tom's tickets. "I forgot I booked."
+
+111
+00:12:35,000 --> 00:12:47,000
+Tom: It really does. And honestly, some of these people aren't even annoyed at us. They're embarrassed. One guy wrote, "I feel terrible, I've wasted a whole plot." He wasn't angry at all.
+
+112
+00:12:47,000 --> 00:12:52,000
+Leela: That's sad, actually. He's not the villain here. Nobody's the villain here.
+
+113
+00:12:52,000 --> 00:12:54,000
+Nisha: Except the WhatsApp group.
+
+114
+00:12:54,000 --> 00:12:59,000
+Leela: Except the WhatsApp group. But even they're just — they want to garden. That's not a crime.
+
+115
+00:12:59,000 --> 00:13:10,000
+Tom: One more thing from the tickets, and then I'll stop. A few people said they'd be happy to share a plot. Like, split it with someone. Two of them suggested it unprompted.
+
+116
+00:13:10,000 --> 00:13:11,000
+Nisha: Share a plot.
+
+117
+00:13:11,000 --> 00:13:16,000
+Tom: Yeah. "Is there a way to go halves with someone." That was the phrasing.
+
+118
+00:13:16,000 --> 00:13:20,000
+Leela: Oh, that's interesting. That's a completely different shape of solution.
+
+119
+00:13:20,000 --> 00:13:31,000
+Nisha: It is. But let's not chase it yet, we've got a queue of things. Kiran, what's the actual no-show number? Because we keep saying "many" and I want a number.
+
+120
+00:13:31,000 --> 00:13:34,000
+Kiran: Right. So — booked plots, current season, 340 total. Of those, plots with zero check-ins by week six — that's 118.
